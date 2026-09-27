@@ -191,21 +191,42 @@ try {
             Write-Result 'PASS' '.env present' 'live trading flag is not enabled'
         }
     } else {
-        Write-Result 'WARN' '.env' 'not created yet (Copy-Item .env.example .env)'
+        Write-Result 'WARN' '.env' 'not created yet - run npm run env:provision'
     }
 
     # ---------------- docker (optional) ----------------
+    # Docker Desktop can be installed without this shell inheriting the new
+    # PATH, so look for the binary before claiming it is absent.
+    $dockerCmd = $null
+    $dockerBin = $null
     if (Test-Command 'docker') {
-        $dockerVersion = (& docker -v 2>$null)
-        $dockerUp = (& docker info --format '{{.ServerVersion}}' 2>$null)
-        if ($dockerUp) { Write-Result 'PASS' 'Docker' "$dockerVersion (daemon running)" }
-        else { Write-Result 'WARN' 'Docker' "$dockerVersion (daemon not running) - optional" }
-        if (Test-Command 'docker') {
-            $composeVersion = (& docker compose version 2>$null)
-            if ($composeVersion) { Write-Result 'PASS' 'Docker Compose' $composeVersion }
-            else { Write-Result 'WARN' 'Docker Compose' 'not available - optional' }
+        $dockerCmd = 'docker'
+    }
+    else {
+        $candidate = Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin\docker.exe'
+        if (Test-Path $candidate) { $dockerCmd = 'docker'; $dockerBin = $candidate }
+    }
+
+    if ($dockerCmd) {
+        if ($dockerBin) {
+            $dockerVersion = (& $dockerBin -v 2>$null)
+            $dockerUp = (& $dockerBin info --format '{{.ServerVersion}}' 2>$null)
+            $composeVersion = (& $dockerBin compose version 2>$null)
+            Write-Result 'WARN' 'Docker on PATH' 'installed, but this shell predates the install - open a new terminal so `npm run db:start` works'
         }
-    } else {
+        else {
+            $dockerVersion = (& docker -v 2>$null)
+            $dockerUp = (& docker info --format '{{.ServerVersion}}' 2>$null)
+            $composeVersion = (& docker compose version 2>$null)
+        }
+
+        if ($dockerUp) { Write-Result 'PASS' 'Docker' "$dockerVersion (daemon running)" }
+        else { Write-Result 'WARN' 'Docker' "$dockerVersion (daemon not reachable) - optional" }
+
+        if ($composeVersion) { Write-Result 'PASS' 'Docker Compose' $composeVersion }
+        else { Write-Result 'WARN' 'Docker Compose' 'not available - optional' }
+    }
+    else {
         Write-Result 'WARN' 'Docker' 'not installed - optional, required only for local PostgreSQL'
     }
 

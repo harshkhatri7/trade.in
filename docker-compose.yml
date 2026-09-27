@@ -20,13 +20,17 @@ services:
     environment:
       POSTGRES_DB: ${DATABASE_NAME:-harsh_quant_os}
       POSTGRES_USER: ${DATABASE_USER:-harsh_quant_os}
-      # Local development only. The real value comes from .env and is never
-      # committed. The default below is deliberately not a secret.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only-not-a-secret}
+      # One credential source: the same DATABASE_PASSWORD the API reads from
+      # .env, so the container and the application can never disagree about it.
+      # The :? form aborts `docker compose up` loudly when the key is missing
+      # or still a placeholder - run scripts\setup\provision-env.ps1 first.
+      # This value is local-only and is never committed.
+      POSTGRES_PASSWORD: '${DATABASE_PASSWORD:?DATABASE_PASSWORD is not set - run scripts\setup\provision-env.ps1}'
       TZ: UTC
       PGTZ: UTC
     ports:
-      - '${DATABASE_PORT:-5432}:5432'
+      # Loopback only: the development database is never exposed to the LAN.
+      - '127.0.0.1:${DATABASE_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Executed on first start, in alphabetical order.
@@ -47,7 +51,8 @@ services:
     restart: unless-stopped
     command: ['redis-server', '--save', '', '--appendonly', 'no']
     ports:
-      - '6379:6379'
+      # Loopback only, and Redis has no password here - never expose it.
+      - '127.0.0.1:6379:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s

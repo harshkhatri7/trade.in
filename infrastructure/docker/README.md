@@ -58,8 +58,16 @@ DATABASE_USER  harsh_quant_os
 DATABASE_PORT  5432
 ```
 
-The container password defaults to a clearly non-secret local value and is
-overridden by `POSTGRES_PASSWORD` from `.env` when present.
+The container and the API share one credential: `POSTGRES_PASSWORD` inside the
+compose file reads `DATABASE_PASSWORD` from `.env`, so both sides always agree.
+`docker compose up` aborts with a clear message if that key is missing or still
+holds a template placeholder. Generate it locally with:
+
+```powershell
+npm run env:provision   # scripts\setup\provision-env.ps1
+```
+
+Ports bind to `127.0.0.1` only, so neither service is reachable from the LAN.
 
 ## Tests
 
