@@ -31,6 +31,7 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run test:py",
     "health": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\development\\health-check.ps1",
     "setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\setup\\setup.ps1",
+    "env:provision": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\setup\\provision-env.ps1",
     "db:start": "docker compose up -d postgres",
     "db:stop": "docker compose stop postgres",
     "db:logs": "docker compose logs -f postgres",

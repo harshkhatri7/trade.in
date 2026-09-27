@@ -102,11 +102,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\development\health-c
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup\setup.ps1
 
 # 3. Configure your local environment
-Copy-Item .env.example .env
+#    Creates .env from the template if it is missing, generates local-only
+#    secrets (never printed), and covers both loopback origins for CORS.
+npm run env:provision
 
 # 4. Run every check
 npm run check
 ```
+
+`.env` is git-ignored and is never written by an agent: run the provisioning
+step yourself, and re-run it with `-Force` to rotate the generated values.
 
 Run the application (Phase 1: API + web):
 
@@ -125,7 +130,8 @@ no status, version or environment value on screen is hard-coded.
 If the status panel shows **DISCONNECTED**, either the API is not running or
 the origin you opened the page from is missing from `API_ALLOWED_ORIGINS`;
 the browser refuses the call and the panel says so. `npm run dev` prints a
-warning naming the exact value to add.
+warning naming the exact value to add, and `npm run env:provision` puts both
+loopback origins in the allow-list.
 
 Individual checks:
 
