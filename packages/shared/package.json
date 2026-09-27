@@ -1,0 +1,18 @@
+{
+  "name": "@harsh-quant-os/shared",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "type": "module",
+  "description": "Shared runtime utilities for HARSH QUANT OS (browser and Node safe).",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@harsh-quant-os/types": "0.1.0-alpha"
+  }
+}

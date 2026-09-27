@@ -1,0 +1,19 @@
+# Build and dependency output
+node_modules/
+dist/
+build/
+.next/
+coverage/
+package-lock.json
+
+# Generated / vendored data
+data/
+*.parquet
+*.csv
+
+# Notebooks (formatting them rewrites outputs)
+research/notebooks/
+.ipynb_checkpoints/
+
+# Documentation is authored by hand; formatting churn is not useful.
+*.md

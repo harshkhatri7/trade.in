@@ -1,0 +1,10 @@
+node_modules/
+.venv/
+venv/
+build/
+dist/
+.next/
+coverage/
+data/
+logs/
+*.parquet

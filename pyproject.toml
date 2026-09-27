@@ -1,0 +1,168 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harsh-quant-os"
+# Display version is 0.1.0-alpha; the PEP 440 equivalent is 0.1.0a0.
+version = "0.1.0a0"
+description = "HARSH QUANT OS - quantitative trading research, backtesting and paper trading infrastructure."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "UNLICENSED" }
+authors = [{ name = "HARSH QUANT OS" }]
+keywords = ["quant", "backtesting", "research", "trading"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Private :: Other",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business :: Financial :: Investment",
+]
+
+# Runtime dependencies of the shared domain/config layer.
+# Heavy numeric libraries are opt-in extras so that a plain
+# `pip install -e .` stays fast and the reason for each dependency is explicit.
+dependencies = [
+  "fastapi>=0.115.0",
+  "pydantic>=2.9.0",
+  "pydantic-settings>=2.6.0",
+  "python-dotenv>=1.0.1",
+  "uvicorn>=0.32.0",
+]
+
+[project.optional-dependencies]
+# Quality tooling used by CI and the development scripts.
+dev = [
+  "mypy>=1.13.0",
+  "pytest>=8.3.0",
+  "pytest-cov>=6.0.0",
+  "pytest-asyncio>=0.24.0",
+  "httpx>=0.27.0",
+  "ruff>=0.8.0",
+]
+# Quant stack - installed only when quantitative work starts (Phase 5).
+quant = [
+  "numpy>=2.1.0",
+  "pandas>=2.2.0",
+  "polars>=1.12.0",
+  "scipy>=1.14.0",
+  "scikit-learn>=1.5.0",
+  "statsmodels>=0.14.4",
+]
+# Persistence layer - installed when the database phase starts (Phase 2).
+storage = [
+  "sqlalchemy>=2.0.36",
+  "alembic>=1.14.0",
+  "asyncpg>=0.30.0",
+]
+
+[project.scripts]
+hqos = "harsh_quant_os.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+harsh_quant_os = ["py.typed"]
+
+# ----------------------------------------------------------------------
+# Ruff - linting + formatting (replaces flake8/isort/black)
+# ----------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "scripts"]
+extend-exclude = [".venv", "build", "dist", "data", "research/notebooks"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort (import order)
+  "UP",  # pyupgrade
+  "B",   # bugbear
+  "SIM", # simplifications
+  "C4",  # comprehensions
+  "PIE", # misc lint
+  "T20", # no print() in library code
+  "RUF", # ruff-specific
+]
+ignore = [
+  "E501", # line length is handled by the formatter
+  "B008", # FastAPI dependency injection relies on function-call defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/**" = ["T20"]
+"tests/**" = ["T20"]
+"src/harsh_quant_os/cli.py" = ["T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["harsh_quant_os"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# ----------------------------------------------------------------------
+# Mypy - strict type checking for financial code
+# ----------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+strict = true
+warn_unreachable = true
+show_error_codes = true
+pretty = true
+
+[tool.pydantic.mypy]
+init_forbid_extra = true
+init_treat_strict = true
+warn_required_dynamic_aliases = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_untyped_decorators = false
+
+# ----------------------------------------------------------------------
+# Pytest
+# ----------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers --strict-config"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
+markers = [
+  "unit: fast, isolated unit tests",
+  "integration: tests that exercise more than one component",
+  "security: security and policy enforcement tests",
+  "quant: deterministic quantitative calculation tests",
+  "backtesting: backtest engine tests",
+  "e2e: end-to-end workflow tests",
+  "slow: tests that take more than a few seconds",
+]
+filterwarnings = ["error"]
+
+# ----------------------------------------------------------------------
+# Coverage
+# ----------------------------------------------------------------------
+[tool.coverage.run]
+branch = true
+source = ["src"]
+omit = ["**/tests/*", "**/__main__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]

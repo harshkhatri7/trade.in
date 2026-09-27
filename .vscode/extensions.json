@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "charliermarsh.ruff",
+    "ms-python.python",
+    "ms-python.mypy-type-checker",
+    "EditorConfig.EditorConfig",
+    "redhat.vscode-yaml",
+    "eamodio.gitlens"
+  ]
+}

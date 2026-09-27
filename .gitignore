@@ -1,0 +1,116 @@
+# =====================================================================
+# HARSH QUANT OS - .gitignore
+# Rule: ignore generated/secret/local artefacts ONLY.
+# Never ignore source code, tests, scripts, configuration templates
+# or documentation.
+# =====================================================================
+
+# ---------- Secrets & environment ----------
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.p8
+*.key
+!*.key.example
+secrets.*
+!secrets.*.example
+credentials.json
+token.json
+*.keystore
+
+# ---------- Node / Next.js / TypeScript ----------
+node_modules/
+.next/
+out/
+build/
+dist/
+.turbo/
+.next-cache/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ---------- Python ----------
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# ---------- Notebooks ----------
+.ipynb_checkpoints/
+
+# ---------- Datasets, caches, local databases ----------
+# Large data is never committed; the directory skeleton is kept via
+# data/**/.gitkeep (see data/.gitignore).
+*.parquet
+*.feather
+*.arrow
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.joblib
+*.sqlite
+*.sqlite3
+*.db
+!*.db.schema.sql
+
+# ---------- Build / packaging artefacts ----------
+*.whl
+*.egg
+.cache/
+tmp/
+temp/
+
+# ---------- Logs ----------
+logs/
+*.log
+!docs/**/*.log.example
+
+# ---------- Docker / infrastructure ----------
+infrastructure/docker/.runtime/
+docker-data/
+*.pid
+
+# ---------- Editors & IDEs ----------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+*.code-workspace
+
+# ---------- OS files ----------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+._*
+
+# ---------- Backups & temporary ----------
+*.bak
+*.tmp
+*.orig
+*.rej
+$RECYCLE.BIN/

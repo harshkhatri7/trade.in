@@ -1,0 +1,44 @@
+{
+  "name": "harsh-quant-os",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "description": "HARSH QUANT OS - private quantitative trading research and backtesting platform. Research, backtesting and paper trading only; live trading is disabled.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "workspaces": [
+    "packages/types",
+    "packages/shared"
+  ],
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:py": "python -m pytest",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run test:py",
+    "health": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\development\\health-check.ps1",
+    "setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\setup\\setup.ps1",
+    "db:start": "docker compose up -d postgres",
+    "db:stop": "docker compose stop postgres",
+    "db:logs": "docker compose logs -f postgres",
+    "db:reset": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\data\\reset-database.ps1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^5.0.2",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vitest": "^5.0.2"
+  }
+}

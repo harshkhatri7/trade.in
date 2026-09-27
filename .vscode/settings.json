@@ -1,0 +1,34 @@
+{
+  "editor.formatOnSave": false,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "never"
+  },
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.tabSize": 4
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.tabSize": 2
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[markdown]": {
+    "editor.tabSize": 2
+  },
+  "python.analysis.typeCheckingMode": "strict",
+  "eslint.workingDirectories": ["."],
+  "search.exclude": {
+    "**/.venv": true,
+    "**/node_modules": true,
+    "**/data/raw": true,
+    "**/data/clean": true,
+    "**/data/features": true
+  }
+}

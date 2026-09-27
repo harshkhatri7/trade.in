@@ -1,0 +1,8 @@
+# Ignore everything in this tree - datasets are local artefacts, not source.
+*
+# ...except directories, so Git can descend into them.
+!*/
+# ...and this file.
+!.gitignore
+# ...and the placeholder files that keep empty directories visible.
+!**/.gitkeep

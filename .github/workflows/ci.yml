@@ -1,0 +1,128 @@
+# =====================================================================
+# HARSH QUANT OS - continuous integration
+# ---------------------------------------------------------------------
+# Runs install, format check, lint, type check and tests for both
+# toolchains. It never deploys, never places an order, and has no access
+# to production secrets.
+# =====================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege: CI only needs to read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '24'
+
+jobs:
+  typescript:
+    name: TypeScript (format, lint, types, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-fund
+
+      - name: Check formatting (Prettier)
+        run: npm run format:check
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Type check (tsc)
+        run: npm run typecheck
+
+      - name: Unit tests (Vitest)
+        run: npm run test
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+  python:
+    name: Python (format, lint, types, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install project (with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Check formatting (ruff format)
+        run: python -m ruff format --check .
+
+      - name: Lint (ruff check)
+        run: python -m ruff check .
+
+      - name: Type check (mypy, strict)
+        run: python -m mypy
+
+      - name: Tests (pytest, includes security suite)
+        run: python -m pytest -q
+
+      - name: Coverage report (informational)
+        run: python -m pytest --cov --cov-report=term-missing -q
+
+  repo-policy:
+    name: Repository policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fail if .env is tracked
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env must never be tracked by git"
+            exit 1
+          fi
+          echo "ok: .env is not tracked"
+
+      - name: Fail if live trading is enabled in the template
+        run: |
+          if grep -Eiq '^LIVE_TRADING_ENABLED[[:space:]]*=[[:space:]]*true' .env.example; then
+            echo "::error::LIVE_TRADING_ENABLED must be false in .env.example"
+            exit 1
+          fi
+          echo "ok: live trading disabled in template"
+
+      - name: Warn about large files
+        run: |
+          large=$(git ls-files | xargs -r du -k 2>/dev/null | awk '$1 > 2048 {print $1 "KB " $2}')
+          if [ -n "$large" ]; then
+            echo "::warning::Large files tracked in the repository:"
+            echo "$large"
+          fi
+          echo "ok: scan complete"
