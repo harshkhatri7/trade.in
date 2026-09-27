@@ -1,0 +1,26 @@
+{
+  "name": "@harsh-quant-os/web",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "description": "HARSH QUANT OS web front end (Next.js App Router). Displays API responses only; no filesystem, broker or trading access from the browser.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@harsh-quant-os/shared": "0.1.0-alpha",
+    "@harsh-quant-os/types": "0.1.0-alpha",
+    "next": "^16.3.6",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3"
+  }
+}

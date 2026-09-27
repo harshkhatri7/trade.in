@@ -1,0 +1,26 @@
+{
+  "health": {
+    "status": "ok",
+    "service": "harsh-quant-os-api",
+    "version": "0.1.0-alpha",
+    "environment": "development"
+  },
+  "ready": {
+    "status": "ready",
+    "service": "harsh-quant-os-api",
+    "version": "0.1.0-alpha",
+    "environment": "development",
+    "checks": [
+      {
+        "name": "api",
+        "status": "ok",
+        "detail": "application started and accepting requests"
+      },
+      {
+        "name": "database",
+        "status": "not_configured",
+        "detail": "PostgreSQL is not part of Phase 1; readiness does not depend on it yet"
+      }
+    ]
+  }
+}

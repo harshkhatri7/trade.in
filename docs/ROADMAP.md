@@ -37,11 +37,21 @@ disabled; no secrets in the tree; documentation matches the repository.
   foundation, routing shell, typed API client.
 - `apps/api`: FastAPI application, health endpoints, structured logging,
   request validation, error handling, OpenAPI schema.
-- Authentication and session management.
-- Shared error model between web and API.
+- ~~Authentication and session management.~~ **Moved to Phase 2** — see
+  [ADR-0003](decisions/ADR-0003-authentication-deferred.md).
+- Shared error model between web and API (problem+json on the API side,
+  explicit loading / connected / error / unavailable states on the web side).
 
-**Exit criteria:** a running web app and API that authenticate, with contract
-tests and no business logic beyond identity.
+**Exit criteria:** a running web app and a running API connected by a shared,
+tested contract, with typed configuration, structured logging, consistent
+error handling, contract tests, and no business logic beyond system status.
+
+> **Amended 2026-09-27 by
+> [ADR-0003](decisions/ADR-0003-authentication-deferred.md).** The original
+> exit criterion — "a running web app and API that authenticate" — was **not**
+> met by Phase 1. Sessions need the Phase 2 database, and Phase 1 has no
+> sensitive resource behind its health endpoints yet. The deviation is
+> recorded rather than hidden; authentication is now part of Phase 2.
 
 ---
 
@@ -51,10 +61,13 @@ tests and no business logic beyond identity.
 - Tables for datasets, provenance, experiments, strategies, journal entries
   and audit records.
 - Backup/restore scripts; environment-driven credentials.
+- Authentication and session management persisted in PostgreSQL (moved from
+  Phase 1 by [ADR-0003](decisions/ADR-0003-authentication-deferred.md)).
 - Optional TimescaleDB evaluation, only if time-series query patterns justify it.
 
 **Exit criteria:** migrations run from empty to current and back; audit table
-is append-only; backup and restore are tested.
+is append-only; backup and restore are tested; sessions survive a restart and
+are covered by tests.
 
 ---
 

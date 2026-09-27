@@ -50,7 +50,9 @@ class Settings(BaseSettings):
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1, le=65535)
     api_base_url: str = "http://127.0.0.1:8000"
-    api_allowed_origins: str = "http://localhost:3000"
+    # Explicit development origins only. A wildcard is rejected outside
+    # local development/test (see _enforce_safety_invariants).
+    api_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     # --- web ---------------------------------------------------------
     web_host: str = "127.0.0.1"
@@ -110,6 +112,7 @@ class Settings(BaseSettings):
 
         1. Live trading can never be switched on through configuration.
         2. Placeholder secrets are rejected outside local development/test.
+        3. CORS may not be wide open outside local development.
         """
         if self.live_trading_enabled:
             raise SettingsError(
@@ -123,6 +126,11 @@ class Settings(BaseSettings):
                 raise SettingsError(
                     f"Placeholder secrets in {self.app_env}: {', '.join(unresolved)}. "
                     "Copy .env.example to .env and set real values."
+                )
+            if "*" in self.allowed_origins:
+                raise SettingsError(
+                    "API_ALLOWED_ORIGINS must list explicit origins outside local development; "
+                    "a wildcard origin is only acceptable for a local development server."
                 )
         return self
 

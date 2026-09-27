@@ -12,6 +12,17 @@ Shared TypeScript **type** definitions for HARSH QUANT OS.
 
 ## Status
 
-Phase 0 - foundation. The enums below mirror the Phase 0 Python contracts
-(`TradingMode`, `JobStatus`, `DataQualityStatus`, `Timeframe`,
-`MemoryCategory`). Richer domain types arrive with the phases that define them.
+Phase 1 - application skeleton. The package now carries:
+
+- the foundation enums that mirror the Phase 0 Python contracts
+  (`TradingMode`, `JobStatus`, `DataQualityStatus`, `Timeframe`,
+  `MemoryCategory`);
+- the Phase 1 system-status contract (`HealthResponse`, `ReadyResponse`,
+  `ReadinessCheck`, `HealthStatus`, `ReadinessStatus`, `CheckStatus`,
+  `ApiEnvironment`), mirroring
+  `src/harsh_quant_os/contracts/system.py`.
+
+Parity with Python is enforced in both directions:
+`tests/unit/health-contract.test.ts` parses the Python source, and
+`tests/api/test_contract_parity.py` parses this package's TypeScript. Richer
+domain types arrive with the phases that define them.

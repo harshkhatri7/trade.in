@@ -23,5 +23,13 @@
     "types": ["node"]
   },
   "include": ["packages/*/src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
-  "exclude": ["node_modules", "dist", "build", ".next", "coverage"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+    "tests/web",
+    "tests/integration"
+  ]
 }

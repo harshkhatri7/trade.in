@@ -57,6 +57,9 @@ jobs:
       - name: Unit tests (Vitest)
         run: npm run test
 
+      - name: Build web app (next build)
+        run: npm run build:web
+
       - name: Dependency audit
         run: npm audit --audit-level=high
 
@@ -73,6 +76,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
+          # Dependencies live in pyproject.toml; without this the pip cache
+          # looks for requirements.txt, finds nothing and fails the job.
+          cache-dependency-path: pyproject.toml
 
       - name: Install project (with dev extras)
         run: |
@@ -93,6 +99,44 @@ jobs:
 
       - name: Coverage report (informational)
         run: python -m pytest --cov --cov-report=term-missing -q
+
+  integration:
+    name: Integration (API over HTTP, API to client to DOM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies (npm)
+        run: npm ci --no-fund
+
+      - name: Install project (Python, with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      # The TypeScript integration suite starts a real API process. It is run
+      # in its own job so that it cannot skip for lack of Python and still
+      # report a green build; here `python` is on PATH and imports fastapi.
+      - name: Integration tests (real API process -> typed client -> DOM)
+        run: npm run test:integration
+
+      - name: Integration tests (real API process over HTTP)
+        run: python -m pytest tests/integration -q
 
   repo-policy:
     name: Repository policy

@@ -27,7 +27,12 @@ not run is reported as **not run** — never as passing.
 ```text
 tests/
 ├── unit/          pure logic: config, gates, contracts, helpers
-├── integration/   component interactions (Phase 1+)
+├── api/           FastAPI routes, error mapping, CORS, config, contract parity
+├── web/           API client and component tests (Vitest + jsdom)
+├── contracts/     shared contract fixture: system-status.json
+├── integration/   real boundaries, two halves:
+│                  ├── test_api_http.py       API process → real HTTP → assertions
+│                  └── api-web-flow.test.tsx  API process → typed client → DOM
 ├── security/      secrets, live-trading gate, policy enforcement
 ├── data/          provenance, validation, dataset contracts
 ├── quant/         golden values, statistical behaviour (Phase 5+)
@@ -38,6 +43,14 @@ tests/
 Markers are registered in `pyproject.toml`: `unit`, `integration`,
 `security`, `quant`, `backtesting`, `e2e`, `slow`.
 
+The TypeScript side of `tests/` is excluded from the root `tsconfig.json`
+(the web app's config includes it instead) so `npm run typecheck` checks both
+projects exactly once each.
+
+A check that cannot run must say so: the TypeScript integration suite prints
+the reason it skipped (no Python with FastAPI), and CI runs it in a job where
+Python is installed, so it cannot skip there unnoticed.
+
 ---
 
 ## 3. What each layer uses
@@ -47,11 +60,13 @@ Markers are registered in `pyproject.toml`: `unit`, `integration`,
 | Python unit/integration  | pytest                | `npm run test:py`        |
 | Python coverage          | pytest-cov            | `python -m pytest --cov` |
 | TypeScript unit          | Vitest                | `npm run test`           |
+| TypeScript components    | Vitest + jsdom + Testing Library | `npm run test`   |
+| Integration (API → DOM)  | Vitest + a real API process | `npm run test:integration` |
 | TypeScript coverage      | Vitest + v8 provider  | `npm run test:coverage`  |
-| End-to-end browser       | Playwright (Phase 4+) | —                        |
+| End-to-end browser       | Playwright (Phase 4+, not installed) | —          |
 | Lint/format/type gates   | Ruff, mypy, ESLint, `tsc`, Prettier | `npm run check` |
 
-Run everything: `npm run check`.
+Run everything: `npm run check` (format, lint, typecheck, Vitest, pytest).
 
 ---
 
@@ -116,24 +131,38 @@ Documentation is treated as an artefact with tests, not as optional prose.
 
 ## 8. Continuous integration
 
-`.github/workflows/ci.yml` runs on every push and pull request:
+`.github/workflows/ci.yml` runs on every push and pull request, in four jobs:
 
-1. install (npm + pip, from lockfiles);
-2. format check (Prettier, Ruff);
-3. lint (ESLint, Ruff);
-4. type check (`tsc`, `mypy`);
-5. tests (Vitest, pytest, including the secret scan);
-6. build/import check.
+1. **TypeScript** — install (npm, from the lockfile), format check
+   (Prettier), lint (ESLint), type check (`tsc` for the root project and for
+   `apps/web`), tests (Vitest), `next build`, dependency audit.
+2. **Python** — install (`pip install -e ".[dev]"`), format check (Ruff
+   format), lint (Ruff check), type check (`mypy` strict), tests (pytest,
+   including the security and documentation suites), coverage report.
+3. **Integration** — installs both toolchains and runs the integration
+   suites for real: `npm run test:integration` (API process → typed client →
+   DOM) and `pytest tests/integration` (API process over HTTP). This job
+   exists so the TypeScript integration suite cannot skip for lack of Python
+   and still report a green build.
+4. **Repository policy** — `.env` must not be tracked, `LIVE_TRADING_ENABLED`
+   must be false in the template, no unexpectedly large files.
 
-CI never deploys and never has access to production secrets.
+CI never deploys, never places an order, and never has access to production
+secrets.
 
 ---
 
 ## 9. What is explicitly not tested yet
 
-Honest gaps, by phase: API routes and auth (Phase 1), database migrations
-(Phase 2), ingestion (Phase 3), UI end-to-end (Phase 4), quant maths
-(Phase 5), backtest engine (Phase 6), risk engine (Phase 9), local agent
-permissions (Phase 11), sync (Phase 12).
+Honest gaps, by phase: authentication and sessions (not implemented — Phase 2,
+see [ADR-0003](../decisions/ADR-0003-authentication-deferred.md)), database
+migrations (Phase 2), ingestion (Phase 3), UI end-to-end in a real browser
+(Phase 4; Playwright is not installed), quant maths (Phase 5), backtest
+engine (Phase 6), risk engine (Phase 9), local agent permissions (Phase 11),
+sync (Phase 12).
+
+What Phase 1 does cover: API routes and error mapping, the shared contract in
+both directions, the typed client's failure modes, each rendered UI state,
+and the full API → client → DOM chain against a live server.
 
 See [../PROJECT-STATUS.md](../PROJECT-STATUS.md).

@@ -1,7 +1,9 @@
 # Monitoring
 
-**Status:** Phase 0. There is no running service to monitor yet. This
-document defines what will be observed and how honestly it will be reported.
+**Status:** Phase 1. A development API serves `/health` and `/ready` on the
+local machine; there is no deployment, no metrics pipeline and no alerting
+yet. This document defines what will be observed and how honestly it will be
+reported.
 
 ---
 

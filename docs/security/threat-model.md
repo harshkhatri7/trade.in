@@ -1,6 +1,6 @@
 # Threat model
 
-Scope: HARSH QUANT OS at Phase 0 and as it will exist through Phase 17.
+Scope: HARSH QUANT OS at Phase 1 and as it will exist through Phase 17.
 Method: assets → trust boundaries → adversaries → mitigations → residual risk.
 
 ---
@@ -59,7 +59,7 @@ B8  AI adapter         → Any tool       (typed allow-list only)
 | T4 | Browser gains filesystem access                    | Only API → agent path; agent path allow-list; no shell        | Phase 11 |
 | T5 | Local agent abused as a remote code executor       | Typed operation allow-list; no command strings, ever          | Phase 11 |
 | T6 | Path traversal / symlink escape on the agent       | Canonicalisation + prefix check with adversarial tests        | Phase 11 |
-| T7 | Stolen session/token                               | Short-lived tokens, rotation, revocation, audit               | Phase 1 |
+| T7 | Stolen session/token                               | Short-lived tokens, rotation, revocation, audit               | Phase 2 |
 | T8 | SQL injection                                      | Parameterised queries via SQLAlchemy; no string-built SQL     | Phase 2 |
 | T9 | Poisoned or manipulated data                       | Provenance, cross-source checks, `suspect` status, quarantine | Phase 3 |
 | T10 | Look-ahead / leakage producing false confidence    | Deterministic tests, leakage properties, manifest reproducibility | Phase 6/7 |
@@ -83,11 +83,13 @@ B8  AI adapter         → Any tool       (typed allow-list only)
 
 ---
 
-## 6. Residual risks at Phase 0
+## 6. Residual risks at Phase 1
 
 | Risk                                              | Handling                                        |
 | ------------------------------------------------- | ------------------------------------------------ |
-| No authentication exists yet — nothing is exposed | Not scheduled until Phase 1; no listener exists  |
+| The API listens with **no authentication**        | Serves `/health` and `/ready` only; read-only; no sensitive or state-changing data; binds to `127.0.0.1`; CORS allow-list; authentication lands in Phase 2 ([ADR-0003](../decisions/ADR-0003-authentication-deferred.md)) |
+| CORS allow-list is configuration, not authorisation | `Settings` rejects `*` outside development/test; covered by tests |
+| `NEXT_PUBLIC_API_BASE_URL` chooses where the browser reads | Public by construction (no secrets in `NEXT_PUBLIC_`); it only selects an origin for `/health` |
 | Docker absent, so local PostgreSQL unprovisioned  | Documented in project status; optional           |
 | Dependency advisories may appear after install    | CI runs `npm audit`; refresh on notice           |
 | Git identity is a local placeholder               | Must be set before pushing to a remote           |

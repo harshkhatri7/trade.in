@@ -1,0 +1,69 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens for the platform. Tailwind v4 reads these from CSS, so there
+ * is no separate config file: one source of truth for colour, type and rhythm.
+ * The palette is intentionally dark, restrained and high-contrast.
+ */
+@theme {
+  --color-surface: #0a0c10;
+  --color-raised: #11151c;
+  --color-line: #1f2632;
+  --color-ink: #e9eef6;
+  --color-muted: #9aa7b8;
+  --color-accent: #7ee0b0;
+  --color-warning: #e9c46a;
+  --color-critical: #ff9494;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: color-mix(in oklab, var(--color-accent) 40%, transparent);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 10;
+  background-color: var(--color-raised);
+  color: var(--color-ink);
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-line);
+}
+
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

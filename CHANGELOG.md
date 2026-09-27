@@ -10,7 +10,73 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 ## [Unreleased]
 
-_Nothing yet._
+Phase 1 — Application skeleton. A real request path, nothing more: browser →
+HTTP → FastAPI → settings → health response, with the contract proved on
+both sides.
+
+### Added
+
+- **API service** `apps/api` — FastAPI application with `GET /api/v1/health`
+  and `GET /api/v1/ready` (aliases at `/health` and `/ready`), served from
+  typed Pydantic models in `harsh_quant_os.contracts.system`; structured
+  logging with request ids, RFC 7807 problem+json error handling, CORS from
+  configuration, OpenAPI disabled in production. `/ready` reports
+  `database: not_configured` because Phase 1 has no database.
+- **Web application** `apps/web` — Next.js 16 + React 19 + Tailwind CSS 4
+  shell: dark, responsive, accessible (landmarks, skip link, reduced-motion),
+  showing the phase and the **live** `/health` response. No charts, no market
+  numbers, no P&L, no fabricated status.
+- **Typed API client** (`apps/web/src/api-client`) — the only place the app
+  performs HTTP. Request state is a closed union: `loading`, `connected`,
+  `error`, `unavailable`; network failures are reported, never hidden.
+- **Shared system contract** — `src/harsh_quant_os/contracts/system.py`,
+  mirrored by `packages/types/src/system.ts` with runtime parsers in
+  `packages/shared/src/api-contracts.ts`, and a common fixture in
+  `tests/contracts/system-status.json`. Parity is checked in **both**
+  directions (TypeScript parses the Python source and vice versa) instead of
+  code generation — see ADR-0002.
+- **Integration tests** — `tests/integration/test_api_http.py` starts a real
+  uvicorn process and asserts over real HTTP; `tests/integration/api-web-flow.test.tsx`
+  runs the same process through the real client into a rendered DOM. It
+  skips with a printed reason when Python with FastAPI is absent, and CI has
+  a dedicated job so it cannot skip there unnoticed.
+- **Tests** — pytest 69 passed, Vitest 47 passed: endpoint schema and
+  status codes, versioning aliases, CORS and configuration, error shape,
+  contract parity, client failure modes, one test per rendered UI state.
+- **Developer commands** — `npm run dev` (API + web), `npm run api`,
+  `npm run web`, `npm run build:web`, `npm run test:integration`;
+  `start-dev.ps1` reads host and port from `.env`.
+- **CI** — `next build` in the TypeScript job and a new integration job that
+  installs both toolchains.
+- **Decisions** — ADR-0002 (shared contract without codegen), ADR-0003
+  (authentication deferred to Phase 2), with the matching roadmap amendment.
+
+### Changed
+
+- `.env.example` — CORS allow-list default widened to both localhost origins,
+  plus `NEXT_PUBLIC_API_BASE_URL`; documented what each key controls.
+- `npm run typecheck` now checks the root project **and** `apps/web`.
+- ESLint ignores are anchored correctly (`**/.next/**`), so generated Next.js
+  output is never linted.
+- `next.config.ts` sets `agentRules: false`: Next does not write
+  `AGENTS.md`/`CLAUDE.md` into a tree whose documentation is machine-tested.
+
+### Security
+
+- CORS is an explicit allow-list from `API_ALLOWED_ORIGINS`; `Settings`
+  rejects a wildcard outside `development`/`test` (test enforced).
+- The API binds to `127.0.0.1` by default and exposes only read-only
+  endpoints; no state-changing route exists.
+
+### Known limitations
+
+- **No authentication.** Roadmap Phase 1 originally required it; ADR-0003
+  records the deviation and moves it to Phase 2, together with the roadmap
+  change. The mitigations listed there are not a substitute for it.
+- No database, no market data, no charts, no strategies, no backtests, no
+  paper trading, no AI — Phase 2 onward.
+- Playwright is not installed; browser-level end-to-end tests start in
+  Phase 4.
 
 ---
 

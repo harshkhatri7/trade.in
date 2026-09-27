@@ -1,7 +1,8 @@
 # Frontend architecture
 
-**Phase:** 0 — Foundation. **`apps/web` is not implemented yet (Phase 1).**
-This document fixes the decisions so Phase 1 has an agreed target.
+**Phase:** 1 — Application skeleton. **`apps/web` is implemented** as a shell:
+layout, design tokens, the typed API client and the system-status panel. The
+decisions below are the ones that produced it.
 
 ---
 
@@ -9,26 +10,28 @@ This document fixes the decisions so Phase 1 has an agreed target.
 
 | Choice                             | Reason                                                              |
 | ---------------------------------- | ------------------------------------------------------------------- |
-| Next.js (App Router)               | Server rendering where it helps, strong routing and build tooling   |
+| Next.js 16 (App Router)            | Server rendering where it helps, strong routing and build tooling   |
+| React 19                           | Current rendering model, strict typing with TypeScript              |
 | TypeScript, `strict: true`         | Financial UI code must not rely on implicit `any`                   |
-| Tailwind CSS                       | Fast, consistent styling without a heavy runtime                    |
+| Tailwind CSS 4 (CSS-first `@theme`)| Fast, consistent styling without a heavy runtime; design tokens live in `globals.css` |
 | Accessible component architecture (shadcn/ui-style) | Composable, ownable components; no black-box vendor lock |
-| TradingView Lightweight Charts     | Purpose-built for financial series, permissive licence, good performance |
+| TradingView Lightweight Charts     | Purpose-built for financial series, permissive licence, good performance (Phase 4) |
 
 Root configuration already in place: `tsconfig.json`, `eslint.config.mjs`,
-`.prettierrc`. The web app will extend the root tsconfig rather than
-duplicating compiler options.
+`.prettierrc`. `apps/web/tsconfig.json` extends the root config and adds only
+the DOM lib and the JSX settings Next.js requires — there is one set of
+compiler options for the repository.
 
 ---
 
 ## 2. Layering inside `apps/web`
 
 ```text
-app/ (routes, layouts, pages)
-  └── components/ (presentational, accessible)
-        └── features/ (feature composition, data hooks)
-              └── api-client/ (typed, generated from the API schema)
-                    └── @harsh-quant-os/types + @harsh-quant-os/shared
+src/app/            routes, layouts, pages
+src/components/     presentational, accessible
+src/features/       feature composition and data hooks
+src/api-client/     the only place this app performs HTTP
+      └── @harsh-quant-os/types + @harsh-quant-os/shared
 ```
 
 Rules:
@@ -36,13 +39,18 @@ Rules:
 1. **No business logic in components.** Components render state and emit
    events.
 2. **No direct data fetching outside `api-client`.** One typed client, one
-   place to handle auth, errors and retries.
-3. **No environment secrets in the browser bundle.** Next.js public env vars
+   place to handle errors; components receive the client as a prop, which is
+   how tests inject a fake.
+3. **Request state is a closed union:** `loading` | `connected` | `error` |
+   `unavailable`. There is no branch that assumes health.
+4. **No environment secrets in the browser bundle.** Next.js public env vars
    are non-secret by definition; anything secret belongs server-side.
-4. **No filesystem, shell or broker access.** The browser talks to the API and
+5. **No filesystem, shell or broker access.** The browser talks to the API and
    nothing else.
-5. **Types come from `@harsh-quant-os/types`**, which mirrors the Python
-   contracts. Drift fails `tests/unit/contract-parity.test.ts`.
+6. **Types come from `@harsh-quant-os/types`**, which mirrors the Python
+   contracts; drift fails `tests/unit/health-contract.test.ts` and
+   `tests/api/test_contract_parity.py` (see
+   [ADR-0002](../decisions/ADR-0002-shared-contract-without-codegen.md)).
 
 ---
 
@@ -75,19 +83,40 @@ Statuses the UI must distinguish honestly:
 
 | Layer             | Tool      | Expectation                                    |
 | ----------------- | --------- | ----------------------------------------------- |
-| Components        | Vitest    | Rendering, state transitions, accessibility rules |
-| Contracts         | Vitest    | Type parity with Python, shape validation        |
-| End-to-end        | Playwright| Login, navigation, research workflows (Phase 4+) |
+| Components        | Vitest + jsdom + Testing Library | Rendering, state transitions, no false connection state |
+| API client        | Vitest    | Path, validation, and network/http/contract errors kept distinct |
+| Contracts         | Vitest + pytest | Type parity with Python, shape validation; see [ADR-0002](../decisions/ADR-0002-shared-contract-without-codegen.md) |
+| Integration       | Vitest (jsdom) + real HTTP | A real API process → typed client → rendered DOM (`tests/integration/api-web-flow.test.tsx`) |
+| End-to-end browser| Playwright| Login, navigation, research workflows (Phase 4+) — **not installed yet** |
 
-Vitest is already configured at the repository root
-(`vitest.config.ts`, `npm run test`).
+Playwright is deliberately not added in Phase 1: it was not already present,
+and the integration chain can be proved with a real HTTP round trip plus a
+DOM render. The browser layer is adopted when a browser-only behaviour
+actually needs it (Phase 4).
+
+Vitest is configured at the repository root
+(`vitest.config.ts`, `npm run test`). Component tests are jsdom-based via a
+`@vitest-environment jsdom` docblock; everything else runs in Node.
 
 ---
 
 ## 6. Phase 1 exit criteria
 
-- App shell with routing, layout and accessible primitives.
-- Typed API client generated from the FastAPI schema.
-- Authenticated read-only pages that render real API responses.
-- No mocked "demo" data anywhere in the UI.
-- `npm run lint`, `npm run typecheck`, `npm run test` all green.
+Delivered:
+
+- App shell with layout, accessible landmarks, skip link and design tokens.
+- Typed API client with explicit `loading` / `connected` / `error` /
+  `unavailable` states; network failures are never hidden.
+- One read-only page that renders a real API response — no mocked data, no
+  invented status, no fake charts or figures.
+- Component, client, contract and integration tests green in CI.
+- `npm run lint`, `npm run typecheck` (root **and** `apps/web`),
+  `npm run test` and `npm run build:web` all green.
+
+Not delivered (recorded, not hidden):
+
+- **Authentication and session management** moved to Phase 2 by
+  [ADR-0003](../decisions/ADR-0003-authentication-deferred.md), which restates
+  the roadmap exit criteria for this phase.
+- Routing beyond the single shell page, and generated client code — both
+  deferred with the same ADR trail as above.

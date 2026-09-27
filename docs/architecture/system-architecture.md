@@ -118,13 +118,15 @@ network route to the local machine. See [local agent](local-agent.md).
 
 ## 5. Deployment shape
 
-**Development** (Phase 0, today):
+**Development** (Phase 1, today):
 
 - Everything runs on the local Windows machine.
 - `.venv` for Python, npm workspaces for TypeScript.
+- `npm run dev` starts the API (`127.0.0.1:8000`) and the web app
+  (`127.0.0.1:3000`); ports and CORS origins come from `.env`.
 - PostgreSQL optional via `docker compose up -d postgres`.
 
-**Target** (Phases 1–17):
+**Target** (Phases 2–17):
 
 | Tier        | Contents                                   | Where          |
 | ----------- | ------------------------------------------ | -------------- |
@@ -136,7 +138,7 @@ Sync details: [synchronization](synchronization.md).
 
 ---
 
-## 6. What Phase 0 actually provides
+## 6. What Phases 0–1 actually provide
 
 Implemented and tested:
 
@@ -148,9 +150,19 @@ Implemented and tested:
   ([local agent](local-agent.md)).
 - Memory categories ([database](database.md)).
 - Cross-language type parity enforced by tests.
+- **API service** (`apps/api`): `/api/v1/health` and `/api/v1/ready` from
+  typed models, structured logging with request ids, problem+json errors,
+  CORS from configuration ([backend](backend.md)).
+- **Web shell** (`apps/web`): typed API client with explicit
+  loading / connected / error / unavailable states, and a status panel that
+  renders the live API response ([frontend](frontend.md)).
+- **Shared system contract** in both languages, proved by two-way parity
+  tests and by an integration chain (API process → client → DOM).
 
-Not implemented: everything else on this page. See
-[../PROJECT-STATUS.md](../PROJECT-STATUS.md).
+Not implemented: authentication (Phase 2,
+[ADR-0003](../decisions/ADR-0003-authentication-deferred.md)), database,
+data, quant, backtesting, risk, AI, paper trading, live trading — everything
+else on this page. See [../PROJECT-STATUS.md](../PROJECT-STATUS.md).
 
 ---
 

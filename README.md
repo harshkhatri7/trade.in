@@ -1,6 +1,6 @@
 # HARSH QUANT OS
 
-**Version:** 0.1.0-alpha · **Phase:** 0 — Foundation · **Live trading:** DISABLED
+**Version:** 0.1.0-alpha · **Phase:** 1 — Application skeleton · **Live trading:** DISABLED
 
 A private quantitative trading **research** and **analysis** platform.
 
@@ -15,21 +15,27 @@ paper-trading loop with strict risk control.
 
 ---
 
-## Current state (Phase 0)
+## Current state (Phase 1)
 
-Phase 0 delivers the **development foundation only**: repository layout,
-documentation, tooling, safety gates, contracts, tests and CI. There is no
-dashboard, no market data, no strategy, no signal, no backtest engine and no
-trading.
+Phase 0 delivered the **development foundation**: repository layout,
+documentation, tooling, safety gates, contracts, tests and CI. Phase 1 adds
+the **application skeleton**: a FastAPI service and a Next.js shell joined by
+a typed, tested contract. There is no dashboard, no market data, no strategy,
+no signal, no backtest engine and no trading.
 
 | Subsystem        | Status                               |
 | ---------------- | ------------------------------------ |
 | Repository/Git   | Initialized (`main`)                 |
-| Documentation    | Complete for Phase 0                 |
+| API              | `/api/v1/health`, `/api/v1/ready`    |
+| Web shell        | Next.js app showing the live API response |
+| Contract         | Python ⇄ TypeScript, parity tested   |
+| Authentication   | Not implemented (Phase 2, ADR-0003)  |
+| Documentation    | Complete for Phases 0–1              |
 | Type checking    | Strict TypeScript + strict mypy      |
 | Lint/format      | Ruff (Python), ESLint + Prettier     |
 | Tests            | pytest + Vitest, all passing         |
 | Safety gates     | Implemented and tested               |
+| Database         | Not implemented (Phase 2)            |
 | Market data      | Not implemented (Phase 3)            |
 | Quant engine     | Not implemented (Phase 5)            |
 | Backtesting      | Not implemented (Phase 6)            |
@@ -102,15 +108,35 @@ Copy-Item .env.example .env
 npm run check
 ```
 
+Run the application (Phase 1: API + web):
+
+```powershell
+npm run dev        # API on http://127.0.0.1:8000 + web on http://127.0.0.1:3000
+npm run api        # API only
+npm run web        # web only
+npm run build:web  # production build of the web app
+```
+
+Ports, CORS origins and the browser's API URL come from `.env`
+(`API_HOST`, `API_PORT`, `WEB_HOST`, `WEB_PORT`, `API_ALLOWED_ORIGINS`,
+`NEXT_PUBLIC_API_BASE_URL`). The page displays the live `/health` response —
+no status, version or environment value on screen is hard-coded.
+
+If the status panel shows **DISCONNECTED**, either the API is not running or
+the origin you opened the page from is missing from `API_ALLOWED_ORIGINS`;
+the browser refuses the call and the panel says so. `npm run dev` prints a
+warning naming the exact value to add.
+
 Individual checks:
 
 ```powershell
-npm run format:check   # Prettier
-npm run lint           # ESLint
-npm run typecheck      # tsc --noEmit (strict)
-npm run test           # Vitest
-npm run test:py        # pytest
-npm run health         # environment health report (real results only)
+npm run format:check      # Prettier
+npm run lint              # ESLint
+npm run typecheck         # tsc --noEmit (strict) for root and apps/web
+npm run test              # Vitest (unit, web and integration suites)
+npm run test:integration  # integration suite only
+npm run test:py           # pytest
+npm run health            # environment health report (real results only)
 ```
 
 Python-only equivalents (no npm):

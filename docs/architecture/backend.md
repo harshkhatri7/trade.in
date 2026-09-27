@@ -1,8 +1,8 @@
 # Backend architecture
 
-**Phase:** 0 — Foundation. `apps/api` is **not implemented yet (Phase 1)**.
-The shared foundation it will build on — `src/harsh_quant_os` — exists and is
-tested today.
+**Phase:** 1 — Application skeleton. `apps/api` **exists and runs**: a FastAPI
+application with health and readiness endpoints, built on the shared
+`src/harsh_quant_os` foundation (settings, safety gates, contracts).
 
 ---
 
@@ -18,7 +18,8 @@ tested today.
 | PostgreSQL + SQLAlchemy + Alembic (Phase 2) | Relational integrity, reviewable migrations           |
 
 Already installed and configured in `.venv`: `fastapi`, `uvicorn`, `pydantic`,
-`pydantic-settings`, `httpx` (test client), `pytest`, `ruff`, `mypy`.
+`pydantic-settings`, `httpx2` (the HTTP test client required by Starlette's
+TestClient), `pytest`, `ruff`, `mypy`.
 
 ---
 
@@ -80,14 +81,17 @@ See [secrets management](../security/secrets-management.md).
 
 | Concern            | Convention                                                        |
 | ------------------ | ----------------------------------------------------------------- |
-| Base URL           | `/api/v1/...`                                                     |
+| Base URL           | `/api/v1/...`; `/health` and `/ready` are aliases of `/api/v1/health` and `/api/v1/ready` |
 | Errors             | RFC 7807 problem+json: `type`, `title`, `status`, `detail`        |
 | Validation         | 422 with field-level messages; never leak internals               |
-| Auth               | Session cookie (web) + short-lived bearer (machine clients)       |
+| Auth               | Session cookie (web) + short-lived bearer (machine clients) — **not implemented; moved to Phase 2 by [ADR-0003](../decisions/ADR-0003-authentication-deferred.md)** |
 | Idempotency        | `Idempotency-Key` header on any write that can move a position    |
 | Pagination         | Cursor-based; explicit `has_more`                                 |
 | Time               | ISO-8601 with timezone, always UTC in storage                     |
 | Versioning         | Additive changes in place; breaking changes require a new prefix  |
+
+Versioning and the shared-contract strategy are recorded in
+[ADR-0002](../decisions/ADR-0002-shared-contract-without-codegen.md).
 
 ---
 
@@ -104,9 +108,14 @@ See [secrets management](../security/secrets-management.md).
 
 ## 6. Security posture
 
-- Deny-by-default authorisation on every route.
-- Rate limiting and CSRF protection in Phase 1.
-- Passwords hashed with Argon2id or bcrypt (Phase 1); never reversible.
+- Deny-by-default authorisation on every route — **not yet enforced**,
+  because no authenticated surface exists; the gap and its mitigations are
+  recorded in [ADR-0003](../decisions/ADR-0003-authentication-deferred.md).
+- Rate limiting and CSRF protection arrive with authentication (Phase 2).
+- Passwords hashed with Argon2id or bcrypt (Phase 2); never reversible.
+- The API binds to `127.0.0.1` by default and CORS is an explicit
+  allow-list from `API_ALLOWED_ORIGINS`; `Settings` rejects `*` outside
+  `development`/`test`.
 - No broker credentials exist anywhere in the API. If a future phase needs
   them, they live in a dedicated store with restricted access — see
   [broker security](../security/broker-security.md).
@@ -120,8 +129,9 @@ See [secrets management](../security/secrets-management.md).
 | Layer           | Tool     | Expectation                                        |
 | --------------- | -------- | -------------------------------------------------- |
 | Unit            | pytest   | Domain and service logic, fully deterministic       |
-| API             | pytest + httpx | Request/response, auth, error mapping         |
-| Contract        | pytest   | OpenAPI schema matches the TypeScript client types |
+| API             | pytest + Starlette TestClient (`httpx2`) | Request/response, error mapping, CORS, config |
+| Contract        | pytest   | Pydantic models match the TypeScript contract (both directions) |
+| Integration     | pytest   | A real uvicorn process over real HTTP (`tests/integration/test_api_http.py`) |
 | Security        | pytest   | Auth, authorisation, gate invariants               |
 
 `pytest` is configured in `pyproject.toml` with `--strict-markers` and
@@ -129,10 +139,24 @@ See [secrets management](../security/secrets-management.md).
 
 ---
 
-## 8. Phase 1 exit criteria
+## 8. Phase 1 exit criteria — as delivered
 
-- FastAPI app with health and version endpoints.
-- Structured logging, request ids, consistent error mapping.
-- Authentication with session management.
-- OpenAPI schema consumed by the typed web client.
-- API, auth and contract tests green in CI.
+Delivered:
+
+- FastAPI application with `GET /api/v1/health` and `GET /api/v1/ready`
+  (aliases at `/health` and `/ready`), served from typed Pydantic models.
+- Structured logging, request ids, problem+json error mapping, CORS from
+  configuration.
+- OpenAPI schema exposed outside production; the web client is **hand-typed
+  against a shared fixture** rather than generated — see
+  [ADR-0002](../decisions/ADR-0002-shared-contract-without-codegen.md).
+- API, contract and integration tests green in CI.
+
+Not delivered (recorded, not hidden):
+
+- **Authentication with session management** — moved to Phase 2 by
+  [ADR-0003](../decisions/ADR-0003-authentication-deferred.md); the roadmap
+  was amended in the same change.
+- Rate limiting and CSRF, which depend on authentication.
+- `/ready` reports `database: not_configured`: there is no database in
+  Phase 1 and the API does not claim otherwise.

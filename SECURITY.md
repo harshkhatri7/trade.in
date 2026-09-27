@@ -1,7 +1,7 @@
 # SECURITY
 
-**Status:** Phase 0 — Foundation. **Live trading:** DISABLED. **Broker:** not
-connected.
+**Status:** Phase 1 — Application skeleton. **Live trading:** DISABLED.
+**Broker:** not connected.
 
 Security in HARSH QUANT OS is about two things: protecting credentials and
 infrastructure, and protecting the researcher from their own system doing
@@ -125,10 +125,17 @@ public disclosure.
 
 ---
 
-## 9. Known gaps at Phase 0
+## 9. Known gaps at Phase 1
 
-- No authentication exists yet (Phase 1); there is no running API.
-- No rate limiting, CSRF or session management yet (Phase 1).
+- **The API has no authentication.** It serves only `/health` and `/ready`,
+  binds to `127.0.0.1` by default, exposes no state-changing route and holds
+  no sensitive data — but it is unauthenticated, and stays that way until
+  Phase 2. Recorded in
+  [ADR-0003](docs/decisions/ADR-0003-authentication-deferred.md); the
+  mitigations listed there are **not** a substitute for authentication.
+- No rate limiting, CSRF protection or session management yet (Phase 2).
+- The browser client runs without authentication and therefore can only read
+  the same unauthenticated endpoints.
 - No database encryption at rest yet (Phase 2).
 - No runtime audit store yet; gate decisions are tested but not persisted
   (Phase 9/10).

@@ -4,12 +4,16 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
+    // Generated directories are ignored anywhere in the tree: patterns with a
+    // leading `**/` are required because flat-config ignores are anchored to
+    // the config file's directory (`apps/web/.next` is not `.next`).
     ignores: [
-      'node_modules/**',
-      'dist/**',
-      'build/**',
-      'coverage/**',
-      '.next/**',
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/build/**',
+      '**/coverage/**',
+      '**/.next/**',
+      '**/out/**',
       'data/**',
       '.venv/**',
       'venv/**',
