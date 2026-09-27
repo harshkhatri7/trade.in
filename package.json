@@ -23,7 +23,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run tests/integration",
-    "test:py": "python -m pytest",
+    "test:py": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\development\\test.ps1 -PythonOnly",
     "build:web": "npm run build --workspace apps/web",
     "api": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\development\\start-dev.ps1 -WithApi",
     "web": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\development\\start-dev.ps1 -WithWeb",
