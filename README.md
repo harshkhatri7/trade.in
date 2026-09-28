@@ -133,6 +133,13 @@ the browser refuses the call and the panel says so. `npm run dev` prints a
 warning naming the exact value to add, and `npm run env:provision` puts both
 loopback origins in the allow-list.
 
+`start-dev.ps1` reports a service only after it has answered a request — the
+API must return JSON from `/api/v1/health` and the page must return HTTP 200
+from a process this run started — so a green line is an observation rather
+than an intention. It refuses to start into a port that is already in use,
+reporting the process holding it and leaving it running, and it exits
+non-zero if a service stops on its own after starting.
+
 Individual checks:
 
 ```powershell

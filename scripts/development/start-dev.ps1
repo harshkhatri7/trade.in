@@ -118,12 +118,20 @@ if ($startWeb) {
 # ---------------------------------------------------------------- helpers
 
 $childProcesses = @()
+# Parallel to $childProcesses: the name of each service whose process is at
+# that index, so a process that dies can be reported as "api" or "web"
+# rather than as an anonymous pid.
+$serviceNames = @()
 $startedPorts = @()
 # Set once the normal path has already stopped and checked everything. The
 # `finally` safety net must then stay silent: a second pass can observe a
 # different world than the first (another instance may have taken the port in
 # between) and would print a warning that contradicts the result above it.
 $shutdownPerformed = $false
+# Set when a service stopped on its own instead of being stopped here. The
+# ports can still be released and verified afterwards; the run still has to
+# finish non-zero, because a service that died unasked is not a success.
+$serviceFailed = $false
 
 # pid -> StartTime for every descendant observed while its service was still
 # healthy. The TCP table reports the PID that *created* a listening socket,
@@ -191,6 +199,55 @@ function Wait-ForApiHealth {
             $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
             $contentType = [string]($response.Headers['Content-Type'])
             if ([int]$response.StatusCode -eq 200 -and $contentType -like '*application/json*') { return $true }
+        } catch { }
+        Start-Sleep -Milliseconds 400
+    } while ((Get-Date) -lt $deadline)
+    return $false
+}
+
+# Does the process listening on $Port belong to the tree we started? The TCP
+# table names the PID that *created* the socket, and a stranger can be
+# listening on the same port while our own process is still coming up, so an
+# HTTP 200 on its own says nothing about the server we just launched. The
+# reply counts only when a process in our own tree is the one answering.
+function Test-OwnedListener {
+    param([int]$Port, $Root)
+
+    if ($null -eq $Root) { return $false }
+    try { if ($Root.HasExited) { return $false } } catch { return $false }
+
+    # Hosts without the networking cmdlets cannot be ownership-checked. Say
+    # so rather than pretend the check ran: liveness of our own process is
+    # still required above, which is the same guarantee the API wait gives.
+    if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) { return $true }
+
+    $ownerIds = @()
+    foreach ($listener in @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)) {
+        $ownerIds += [int]$listener.OwningProcess
+    }
+    if ($ownerIds.Count -eq 0) { return $false }
+
+    $ours = @([int]$Root.Id) + @(Get-DescendantPids -RootId ([int]$Root.Id))
+    foreach ($ownerId in $ownerIds) { if ($ours -contains $ownerId) { return $true } }
+    return $false
+}
+
+# Poll until *our own* web process serves the page. Same two lies as the API
+# wait: a reply from a server we do not own proves nothing, and neither does
+# one that arrives after the process we started has died. Both are rejected.
+function Wait-ForWebPage {
+    param([string]$Url, [int]$Port, $Process, [int]$TimeoutSeconds = 90)
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        if ($null -ne $Process) {
+            try { if ($Process.HasExited) { return $false } } catch { return $false }
+        }
+        try {
+            $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+            if ([int]$response.StatusCode -eq 200 -and (Test-OwnedListener -Port $Port -Root $Process)) {
+                return $true
+            }
         } catch { }
         Start-Sleep -Milliseconds 400
     } while ((Get-Date) -lt $deadline)
@@ -353,6 +410,7 @@ try {
                 -WorkingDirectory $repoRoot `
                 -NoNewWindow -PassThru
             $script:childProcesses += $apiProcess
+            $script:serviceNames += 'api'
             $startedPorts += [int]$apiPort
 
             # Only report the API as started once it answered a request;
@@ -386,16 +444,59 @@ try {
     }
 
     # ---------------- Web ----------------
-    $webRequestedInForeground = $false
     if ($startWeb) {
         $webPkg = Join-Path $repoRoot 'apps\web\package.json'
         if (Test-Path $webPkg) {
             # One source of truth: the browser is told where the API lives by
             # the same API_BASE_URL the API itself publishes.
             $env:NEXT_PUBLIC_API_BASE_URL = $apiBaseUrl
+
+            # Refuse to start into a port someone else already holds. Making
+            # room by killing that process is exactly the kind of damage this
+            # script must never do, so it is reported and left running.
+            $webListeners = @(Get-NetTCPConnection -LocalPort ([int]$webPort) -State Listen -ErrorAction SilentlyContinue)
+            if ($webListeners.Count -gt 0) {
+                $holderId = [int]$webListeners[0].OwningProcess
+                Write-Host ('  FAIL  port ' + $webPort + ' is already in use (pid ' + $holderId + ') - left running') -ForegroundColor Red
+                exit 1
+            }
+
+            $npmCmd = Get-Command 'npm.cmd' -ErrorAction SilentlyContinue
+            if (-not $npmCmd) {
+                Write-Host '  FAIL  npm.cmd was not found (run scripts\setup\setup.ps1)' -ForegroundColor Red
+                exit 1
+            }
+
+            # Started as a child rather than as a foreground pipeline: only a
+            # child can be waited on, observed and reaped. cmd.exe is kept in
+            # the chain because that is how npm.cmd runs anyway, and
+            # -NoNewWindow keeps the dev-server log on this console.
+            $webArgs = '/c ""' + $npmCmd.Source + '" run dev --workspace apps/web -- --hostname ' + $webHost + ' --port ' + $webPort + '"'
+            $webProcess = Start-Process -FilePath $env:ComSpec `
+                -ArgumentList $webArgs `
+                -WorkingDirectory $repoRoot `
+                -NoNewWindow -PassThru
+            $script:childProcesses += $webProcess
+            $script:serviceNames += 'web'
             $startedPorts += [int]$webPort
-            $started += 'web'
-            $webRequestedInForeground = $true
+
+            # A green line with nothing behind it would be a claim, not an
+            # observation: report the web only once the page we would hand
+            # over has answered HTTP 200 from our own process tree.
+            $webPageUrl = 'http://' + $webHost + ':' + $webPort + '/'
+            if (Wait-ForWebPage -Url $webPageUrl -Port ([int]$webPort) -Process $webProcess) {
+                # Record the tree while it is intact, as for the API above.
+                Save-ServiceTrees
+                $started += 'web'
+                Write-Host ('  WEB   ' + $webUrlToPrint) -ForegroundColor Green
+            } else {
+                $detail = 'the web process stayed up but ' + $webPageUrl + ' did not answer HTTP 200 within 90 seconds'
+                try {
+                    if ($webProcess.HasExited) { $detail = 'the web process exited before it served the page' }
+                } catch { }
+                Write-Host ('  FAIL  ' + $detail) -ForegroundColor Red
+                exit 1
+            }
         } else {
             $skipped += 'web - apps\web\package.json does not exist yet'
         }
@@ -413,9 +514,6 @@ try {
 
     Write-Host 'Started:' -ForegroundColor Green
     foreach ($item in $started) { Write-Host ('  - ' + $item) }
-    if ($webRequestedInForeground) {
-        Write-Host ('  WEB   ' + $webUrlToPrint) -ForegroundColor Green
-    }
     if ($skipped.Count -gt 0) {
         Write-Host 'Skipped:' -ForegroundColor DarkGray
         foreach ($item in $skipped) { Write-Host ('  - ' + $item) -ForegroundColor DarkGray }
@@ -424,19 +522,38 @@ try {
     Write-Host 'Press Ctrl+C to stop the services started here.' -ForegroundColor DarkGray
     Write-Host ''
 
-    if ($webRequestedInForeground) {
-        # The web app runs in the foreground so its logs and Ctrl+C behave the
-        # way a developer expects; the API (if started) is stopped by the
-        # `finally` block below.
-        & npm.cmd run dev --workspace apps/web -- --hostname $webHost --port $webPort
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host ('  FAIL  web exited with code ' + $LASTEXITCODE) -ForegroundColor Red
+    # Block until Ctrl+C (handled by `finally`) or until a service started
+    # here stops on its own. A service dying unasked is not a clean stop: it
+    # is named below, the rest are stopped, and the run finishes non-zero so
+    # nothing downstream can read it as a success.
+    $failedIndex = -1
+    while ($failedIndex -lt 0 -and $childProcesses.Count -gt 0) {
+        for ($i = 0; $i -lt $childProcesses.Count; $i++) {
+            $proc = $childProcesses[$i]
+            $hasExited = $false
+            try { $hasExited = [bool]$proc.HasExited } catch { $hasExited = $true }
+            if ($hasExited) { $failedIndex = $i; break }
         }
-    } elseif ($childProcesses.Count -gt 0) {
-        # Only background services: block until they stop.
-        foreach ($proc in $childProcesses) {
-            try { Wait-Process -Id $proc.Id -ErrorAction SilentlyContinue } catch { }
-        }
+        if ($failedIndex -lt 0) { Start-Sleep -Milliseconds 500 }
+    }
+
+    if ($failedIndex -ge 0) {
+        $failedProc = $childProcesses[$failedIndex]
+        $failedName = 'a service'
+        if ($failedIndex -lt $serviceNames.Count) { $failedName = $serviceNames[$failedIndex] }
+
+        # A `-NoNewWindow` child never exposes an exit code in Windows
+        # PowerShell: the property reads as $null even after the process is
+        # observed exited, and [int]$null would print an invented 0. Quote a
+        # number only when one was really read - the process's own error, if
+        # any, is already on the console above.
+        $failedCode = $null
+        try { $failedCode = $failedProc.ExitCode } catch { $failedCode = $null }
+        $failedDetail = ''
+        if ($null -ne $failedCode) { $failedDetail = ' with exit code ' + [int]$failedCode }
+        Write-Host ''
+        Write-Host ('  FAIL  ' + $failedName + ' stopped unexpectedly' + $failedDetail) -ForegroundColor Red
+        $serviceFailed = $true
     }
 
     Write-Host ''
@@ -444,6 +561,7 @@ try {
     $shutdownPerformed = $true
     if ($stopProblems.Count -eq 0) {
         Write-Host 'All services stopped - every port started here observed released.' -ForegroundColor Cyan
+        if ($serviceFailed) { exit 1 }
         exit 0
     }
 
