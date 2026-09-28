@@ -116,7 +116,14 @@ fine. There is always more available work than there is validated work.
 - Docker is optional. Without it, PostgreSQL steps report **SKIPPED**, not
   success.
 - Line endings are normalised by `.gitattributes`; do not disable
-  `core.autocrlf`.
+  `core.autocrlf`. The six extension-less dotfiles (`.editorconfig`,
+  `.gitattributes`, `.gitignore`, `.dockerignore`, `.prettierrc`,
+  `.prettierignore`) are pinned to `eol=lf`, because no pattern without a
+  file extension matched them before: a clone on a Windows machine
+  checked them out as CRLF and `npm run check` failed on `.prettierrc`
+  while the same command passed in the working tree that had them as LF.
+  After touching `.gitattributes` or a dotfile, confirm the result in a
+  fresh clone, not only where you are editing.
 
 ---
 

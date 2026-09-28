@@ -22,6 +22,9 @@ reported as partial — never as done.
 - [ ] `npm run test` passes (Vitest).
 - [ ] `npm run test:py` passes (pytest, including security tests).
 - [ ] `ruff check .` and `mypy` report no new findings.
+- [ ] When the change touches line endings, `.gitattributes`, generated
+      files or the repository layout, `npm run check` also passes in a
+      **fresh clone** — a working tree can be right and a clone wrong.
 - [ ] New behaviour has tests; fixed bugs have regression tests.
 - [ ] Financial calculations have deterministic expected-value tests.
 
