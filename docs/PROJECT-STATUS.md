@@ -10,7 +10,7 @@
 | **Paper trading**    | NOT IMPLEMENTED                                |
 | **Capital (paper)**  | ₹1,000                                         |
 | **Primary objective**| Build reliable research infrastructure         |
-| **Last updated**     | 2026-09-27                                     |
+| **Last updated**     | 2026-09-28                                     |
 
 > This file states only what is true right now. It is validated by
 > `tests/unit/test_documentation.py`, and it must be updated in the same
@@ -36,7 +36,7 @@
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP and API → client → DOM), security and documentation suites |
 | CI                          | GitHub Actions: TypeScript, Python, integration, repository policy |
-| Local environment scripts   | setup, health check, validation, dev launcher, database helpers |
+| Local environment scripts   | setup, environment provisioning, health check, validation, dev launcher, database helpers |
 
 ### Running it
 
@@ -98,7 +98,7 @@ displays comes from a validated `/health` response.
 | Python          | 3.12.10 (3.13 also installed)                        |
 | pip             | 26.2.1 (inside `.venv`)                              |
 | Git             | 2.55.0 at `D:\Git` — added to the user PATH          |
-| Docker          | **Not installed** (optional; PostgreSQL not provisioned locally) |
+| Docker          | Docker Desktop 29.8.0 + Compose v5.5.1 running; `postgres` container healthy on `127.0.0.1:5432` |
 
 `scripts\development\health-check.ps1` re-checks all of this at run time and
 prints actual results.
@@ -130,14 +130,20 @@ prints actual results.
    no authentication. Mitigations (localhost bind, CORS allow-list, no
    sensitive or write endpoints) are listed in that ADR and are not a
    substitute for it.
-2. Git identity is a local placeholder (`Harsh Quant OS
-   <owner@harsh-quant-os.local>`). Set your real identity before pushing:
-   `git config user.name "..."` and `git config user.email "..."`.
+2. Git identity is configured locally as a personal name and email rather
+   than the Phase 0 placeholder. Check it is the identity you want before a
+   remote exists: `git config user.name` and `git config user.email`.
 3. No Git remote exists. Adding GitHub is a manual step — nothing is pushed
    automatically.
-4. Docker is not installed, so `docker compose up postgres` has not been
-   exercised on this machine. Install Docker Desktop (or Podman) if you want
-   a local PostgreSQL for Phase 2.
+4. **The local `.env` is not provisioned.** Its secret keys still hold the
+   template placeholders and its CORS allow-list is missing the
+   `http://127.0.0.1:3000` origin that `.env.example` carries, so anything
+   that needs those values refuses to start. Writing `.env` is reserved for
+   the human (AGENTS.md section 3); the whole fix is one command,
+   `npm run env:provision`, which generates values locally and prints only
+   key names. The PostgreSQL volume was created *before* that provisioning,
+   so it also needs re-creating afterwards — `docker compose down -v`, then
+   `npm run db:start` — to pick up the new password.
 5. The TypeScript integration test needs Python with FastAPI installed; it
    skips with a printed reason when they are absent (CI runs it in a job
    that installs them, so it cannot skip there silently).

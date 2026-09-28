@@ -90,9 +90,9 @@ B8  AI adapter         → Any tool       (typed allow-list only)
 | The API listens with **no authentication**        | Serves `/health` and `/ready` only; read-only; no sensitive or state-changing data; binds to `127.0.0.1`; CORS allow-list; authentication lands in Phase 2 ([ADR-0003](../decisions/ADR-0003-authentication-deferred.md)) |
 | CORS allow-list is configuration, not authorisation | `Settings` rejects `*` outside development/test; covered by tests |
 | `NEXT_PUBLIC_API_BASE_URL` chooses where the browser reads | Public by construction (no secrets in `NEXT_PUBLIC_`); it only selects an origin for `/health` |
-| Docker absent, so local PostgreSQL unprovisioned  | Documented in project status; optional           |
+| Local PostgreSQL holds pre-provision credentials   | Re-create the volume (`docker compose down -v`) after `npm run env:provision`; tracked in project status |
 | Dependency advisories may appear after install    | CI runs `npm audit`; refresh on notice           |
-| Git identity is a local placeholder               | Must be set before pushing to a remote           |
+| Git identity is set locally, not review-checked   | Confirm it before pushing to a remote            |
 | Single-machine, single-operator key material      | Acceptable at this scale; revisit before Phase 16 |
 
 ---

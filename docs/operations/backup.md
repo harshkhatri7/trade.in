@@ -93,8 +93,8 @@ real failure — never an unconditional success message.
 ## 7. What is *not* covered yet
 
 - No database exists (Phase 2), so no dump runs today.
-- Docker is not installed on the development machine, so no local PostgreSQL
-  is provisioned.
+- Docker is installed and the development `postgres` container runs, but the
+  schema does not exist yet, so there is still nothing to dump.
 - Cloud object storage is configured in Phase 12.
 
 Track these in [../PROJECT-STATUS.md](../PROJECT-STATUS.md).
