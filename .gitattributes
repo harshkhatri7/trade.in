@@ -28,6 +28,18 @@
 *.cmd     text eol=crlf
 *.bat     text eol=crlf
 
+# Extension-less dotfiles. No pattern above matches a file with no extension,
+# so with core.autocrlf=true a fresh clone checked them out as CRLF while the
+# working tree here stayed LF. `.prettierrc` then failed Prettier's
+# endOfLine=lf rule and `npm run check` failed on a brand-new clone while
+# passing locally. Pinned so every checkout is byte-identical.
+.editorconfig   text eol=lf
+.gitattributes  text eol=lf
+.gitignore      text eol=lf
+.dockerignore   text eol=lf
+.prettierrc     text eol=lf
+.prettierignore text eol=lf
+
 # Binary assets.
 *.png     binary
 *.jpg     binary
