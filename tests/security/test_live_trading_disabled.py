@@ -81,3 +81,21 @@ def test_gate_approves_paper_request_in_paper_mode() -> None:
     assert result.decision is TradeGateDecision.APPROVED
     assert result.mode is TradingModeEnum.PAPER
     assert "live trading remains disabled" in result.reason
+
+
+@pytest.mark.security
+@pytest.mark.unit
+def test_gate_rejects_a_request_that_does_not_match_the_allowed_mode() -> None:
+    """Paper is the only mode enabled, so a `disabled` request must not pass.
+
+    This is the one branch left unexercised: a request that is neither live
+    (refused before the gate) nor the mode the configuration allows.
+    """
+    settings = Settings.load(_env_file=None, paper_trading_enabled=True)
+
+    result = evaluate_trade_gate(settings, TradingModeEnum.DISABLED)
+
+    assert result.decision is TradeGateDecision.REJECTED
+    assert result.approved is False
+    assert result.mode is TradingModeEnum.PAPER
+    assert "does not match allowed mode 'paper'" in result.reason

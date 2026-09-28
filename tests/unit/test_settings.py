@@ -88,3 +88,14 @@ def test_live_trading_helper_has_no_enabling_code_path() -> None:
 
     with pytest.raises(SettingsError, match="cannot be enabled by configuration"):
         settings.with_live_trading_approved()
+
+
+@pytest.mark.unit
+def test_is_placeholder_only_classifies_string_settings() -> None:
+    """A numeric or boolean setting must never be sorted into the secrets."""
+    settings = Settings.load(_env_file=None)
+
+    assert settings.is_placeholder("auth_secret_key") is True
+
+    with pytest.raises(TypeError, match="is not a string setting"):
+        settings.is_placeholder("paper_capital_amount")
