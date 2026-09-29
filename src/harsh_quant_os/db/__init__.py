@@ -22,7 +22,16 @@ from harsh_quant_os.db.engine import (
     dispose_engine,
     ping_database,
 )
-from harsh_quant_os.db.models import AuditLog, User, UserSession
+from harsh_quant_os.db.models import (
+    AuditLog,
+    Dataset,
+    DatasetProvenance,
+    Experiment,
+    JournalEntry,
+    Strategy,
+    User,
+    UserSession,
+)
 
 __all__ = [
     "NAMING_CONVENTION",
@@ -30,6 +39,11 @@ __all__ = [
     "BackupError",
     "BackupManifest",
     "Base",
+    "Dataset",
+    "DatasetProvenance",
+    "Experiment",
+    "JournalEntry",
+    "Strategy",
     "TableBackup",
     "User",
     "UserSession",

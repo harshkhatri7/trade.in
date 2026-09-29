@@ -174,11 +174,15 @@ section 9):
 
 ## 9. Phase 2 — database and authentication, as delivered
 
-- PostgreSQL through SQLAlchemy 2.0 (async) with Alembic migrations; one
-  revision builds the schema from empty. `alembic/env.py` prefers
-  `HQOS_DATABASE_URL` and otherwise reads `Settings`.
-- Tables: `users`, `sessions`, `audit_log`. `audit_log` is append-only by
-  trigger, with a `CHECK` constraint on `event_type`.
+- PostgreSQL through SQLAlchemy 2.0 (async) with Alembic migrations; two
+  revisions (`930c38609bc3`, `3842df3d0db8`) build the schema from empty.
+  `alembic/env.py` prefers `HQOS_DATABASE_URL` and otherwise reads `Settings`.
+- Tables: `users`, `sessions`, `audit_log`, plus the research schema
+  `datasets`, `dataset_provenance`, `strategies`, `experiments` and
+  `journal_entries`. `audit_log` and `dataset_provenance` are append-only by
+  trigger; `audit_log` additionally has a `CHECK` constraint on `event_type`.
+- The research tables have **no writer**: nothing in the application inserts
+  into them. They are a schema, not a feature.
 - `AuthService`: Argon2id password hashing, session tokens stored as an
   HMAC-SHA256 digest, login/logout/me over HTTP with the `hqos_session`
   cookie.
@@ -194,6 +198,6 @@ section 9):
   sequences re-aimed so the next insert cannot collide. Verified end to end
   by `tests/integration/test_backup_restore.py`.
 
-Still open inside Phase 2 (see `docs/PROJECT-STATUS.md`): the schema domains
-for datasets, provenance, experiments, strategies and journal entries. Rate
-limiting and a per-request CSRF token remain unimplemented.
+Rate limiting and a per-request CSRF token remain unimplemented. Neither
+appears on ROADMAP.md's Phase 2 list; both are open gaps rather than
+finished work, and neither should be described as done.

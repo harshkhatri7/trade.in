@@ -15,9 +15,11 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 #### Added
 
 - **PostgreSQL persistence** `src/harsh_quant_os/db/` — SQLAlchemy 2.0 async
-  engine, session factory and the `users` / `sessions` / `audit_log` models.
-- **Migrations** `alembic/` + `alembic.ini` — one revision
-  (`930c38609bc3`) builds the whole schema from empty; `alembic/env.py`
+  engine, session factory, and the `users` / `sessions` / `audit_log` /
+  `datasets` / `dataset_provenance` / `strategies` / `experiments` /
+  `journal_entries` models.
+- **Migrations** `alembic/` + `alembic.ini` — two revisions (`930c38609bc3`,
+  then `3842df3d0db8`) build the whole schema from empty; `alembic/env.py`
   prefers `HQOS_DATABASE_URL` and otherwise reads `Settings`.
 - **Append-only audit log** — an append-only trigger plus a `CHECK`
   constraint on `event_type`; the application cannot rewrite history even if
@@ -47,6 +49,22 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
   schema revision); a connection failure is reported by error type, never by
   the driver's own message, because that message embeds the connection
   string.
+- **The Phase 2 research schema** (revision `3842df3d0db8`) — `datasets`,
+  `dataset_provenance`, `strategies`, `experiments` and `journal_entries`,
+  the schema domains ROADMAP.md asks for. Provenance is append-only at the
+  database, like `audit_log`; deleting a dataset that has recorded origin or
+  a strategy that has experiments is refused rather than cascaded, so
+  research lineage cannot be destroyed by one delete; `metrics` defaults to
+  `{}`, which means nothing has been measured. Structured payloads are
+  `jsonb` rather than a guessed column set, because the strategy and
+  experiment formats belong to modules that do not exist yet.
+- **Migration and schema tests** — five in
+  `tests/integration/test_migrations.py`: build from empty, roll back,
+  rebuild; every refusal provoked and observed (privilege error `42501` for
+  append-only, check violation `23514` for an unknown status or a finish
+  without a start, foreign-key violations for the restricted deletes); plus
+  assertions that no column anywhere stores a naive timestamp or an
+  approximate-numeric value.
 
 #### Fixed
 
@@ -56,9 +74,10 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 #### Not yet delivered
 
-The Phase 2 schema domains beyond identity and audit (datasets, provenance,
-experiments, strategies, journal entries), nightly backup scheduling, rate
-limiting and a per-request CSRF token.
+Nightly backup scheduling, rate limiting, a per-request CSRF token, and the
+TimescaleDB evaluation that ROADMAP.md makes optional and conditional on
+measured query patterns. The Phase 2 research tables exist but have **no
+writer** — they are a schema, not a feature.
 
 ### Phase 1 — Application skeleton
 

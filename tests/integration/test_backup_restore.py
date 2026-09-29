@@ -45,6 +45,11 @@ from harsh_quant_os.db import (
     AuditLog,
     BackupError,
     BackupManifest,
+    Dataset,
+    DatasetProvenance,
+    Experiment,
+    JournalEntry,
+    Strategy,
     UserSession,
     build_engine,
     build_session_factory,
@@ -88,10 +93,17 @@ def _recreate_probe(maintenance: str) -> None:
 
 
 async def _seed(engine: AsyncEngine, live_settings: Settings) -> str:
-    """One account, one session and three audit rows. Returns the address.
+    """One account, one session, three audit rows, one row per research table.
 
-    Built through the real services rather than raw INSERTs, so what gets
-    backed up is exactly what the application would have written.
+    Returns the address.
+
+    Account state is built through the real services rather than raw
+    INSERTs, so what gets backed up is exactly what the application would
+    have written. The research tables have **no** service yet - nothing in
+    the application writes to them in Phase 2 - so those rows go in through
+    the models directly. That is deliberate: seeding them proves the
+    storage round-trips (jsonb, uuid foreign keys, timestamptz, bigint),
+    which is the part a backup could get wrong.
     """
     service = AuthService(
         session_factory=build_session_factory(engine),
@@ -116,6 +128,44 @@ async def _seed(engine: AsyncEngine, live_settings: Settings) -> str:
                     occurred_at=now,
                 )
             )
+
+        suffix = uuid.uuid4().hex[:10]
+        dataset = Dataset(name=f"dataset-{suffix}", description="round-trip fixture")
+        strategy = Strategy(
+            name=f"strategy-{suffix}",
+            spec={"rule": "fixture", "window": 20},
+        )
+        session.add_all([dataset, strategy])
+        await session.flush()
+
+        session.add(
+            DatasetProvenance(
+                dataset_id=dataset.id,
+                source="https://example.invalid/fixture",
+                row_count=7,
+                acquired_at=now,
+            )
+        )
+        experiment = Experiment(
+            name=f"experiment-{suffix}",
+            strategy_id=strategy.id,
+            dataset_id=dataset.id,
+            parameters={"sweep": [10, 20, 30]},
+            metrics={},
+            status="completed",
+            started_at=now,
+            finished_at=now,
+        )
+        session.add(experiment)
+        await session.flush()
+
+        session.add(
+            JournalEntry(
+                title="Round-trip fixture",
+                body="Written so the backup has a note to restore.",
+                experiment_id=experiment.id,
+            )
+        )
         await session.commit()
     return email
 

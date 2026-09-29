@@ -25,8 +25,8 @@
 | Git repository              | Initialized, branch `main`, no remote configured             |
 | Repository layout           | `apps/`, `packages/`, `src/`, `agents/`, `docs/`, `tests/`, `scripts/`, `infrastructure/` |
 | Documentation               | Complete for Phases 0–2 (architecture, development, security, operations, research, ADRs) |
-| Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log` |
-| Migrations                  | One revision (`930c38609bc3`); empty → head → empty is covered by a test |
+| Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log`, `datasets`, `dataset_provenance`, `strategies`, `experiments`, `journal_entries` |
+| Migrations                  | Two revisions (`930c38609bc3` → `3842df3d0db8`); empty → head → empty is covered by a test |
 | Backup and restore          | `harsh_quant_os.db.backup` — binary COPY with the schema revision in the manifest; round trip proved by a test |
 | Authentication              | `AuthService`: Argon2id, sessions in PostgreSQL, `hqos_session` cookie |
 | Audit log                   | Append-only by trigger and `CHECK` constraint; every login outcome recorded |
@@ -83,8 +83,6 @@ There is **no open registration**: accounts are created out of band with
 Nothing below is implemented. Any document or screen claiming otherwise is a
 defect.
 
-- The Phase 2 schema domains beyond identity and audit: datasets and their
-  provenance, experiments, strategies, journal entries
 - Nightly scheduling of backups, and where backup output is stored off-machine
 - Rate limiting and a per-request CSRF token
 - Market-data ingestion and historical data — Phase 3
@@ -148,12 +146,14 @@ prints actual results.
 
 ## 5. Open items carried forward
 
-1. **Phase 2 is not finished.** Every exit criterion in
-   [ROADMAP.md](ROADMAP.md) is now met — migrations from empty, an
-   append-only audit table, tested backup and restore, and sessions that
-   survive a restart — but the phase's schema deliverables (datasets,
-   provenance, experiments, strategies, journal entries) do not exist yet.
-   Do not describe Phase 2 as complete until they do.
+1. **Phase 2 is finished against [ROADMAP.md](ROADMAP.md).** Every exit
+   criterion is met and every non-optional deliverable exists, including the
+   schema domains (datasets, provenance, experiments, strategies, journal
+   entries). Two Phase 2 items remain honestly open rather than claimed:
+   **TimescaleDB has not been evaluated** — the roadmap makes it conditional
+   on measured query patterns and none exist yet — and **the new tables have
+   no writer**. They are a schema, not a feature: nothing inserts into them,
+   so no screen, API or document may imply otherwise.
 2. **No per-request CSRF token.** The session cookie is `SameSite=Lax`, the
    API binds to loopback and CORS is an allow-list; that is the current
    mitigation, not a substitute for a token. The limitation is documented in
@@ -174,8 +174,11 @@ prints actual results.
 
 ## 6. Next step
 
-**Finish Phase 2:** the remaining schema domains — datasets and their
-provenance, experiments, strategies and journal entries — so the deliverables
-listed in [ROADMAP.md](ROADMAP.md) match what the migrations actually create.
-The exit criteria are met; the deliverables are not, and Phase 3 does not
-start before both are.
+**Phase 2 ends here — stop.** AGENTS.md section 9 requires a phase to be
+validated, repaired, documented and committed before the next one starts,
+and that has been done. Phase 3 (market-data engine) is next in
+[ROADMAP.md](ROADMAP.md); it does not begin without a human saying so.
+
+Carried forward instead, none of it Phase 3: nightly backup scheduling and
+where backups live off-machine; rate limiting and a per-request CSRF token;
+and the human-supplied `local_agent_token`.

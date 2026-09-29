@@ -42,8 +42,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: The only database this file may ever write to.
 PROBE_DATABASE_NAME = "harsh_quant_os_migration_probe"
 
-#: Tables the initial Phase 2 migration must leave behind.
-EXPECTED_TABLES = {"alembic_version", "users", "sessions", "audit_log"}
+#: Tables the Phase 2 migrations must leave behind.
+EXPECTED_TABLES = {
+    "alembic_version",
+    "users",
+    "sessions",
+    "audit_log",
+    "datasets",
+    "dataset_provenance",
+    "strategies",
+    "experiments",
+    "journal_entries",
+}
 
 #: The exact wording of the append-only trigger's refusal. Asserting it is
 #: how the test proves *the trigger* refused, rather than some incidental
@@ -337,3 +347,116 @@ def test_models_and_migration_have_not_drifted(
             "the applied schema no longer matches the models; run "
             "`python -m alembic revision --autogenerate` and commit the result"
         )
+
+
+@pytest.mark.integration
+def test_the_research_schema_keeps_the_promises_made_about_it(
+    require_postgres: None, live_settings: Settings
+) -> None:
+    """Datasets, provenance, strategies, experiments and journal entries.
+
+    These five tables exist before anything writes to them, so the only
+    thing standing between "the schema exists" and "the schema is
+    trustworthy" is whether the database actually refuses what the docs
+    say it refuses. Every assertion below is a refusal that was provoked
+    and observed, or a value that was read back - none is a claim about
+    code that was merely written.
+
+    The rows inserted here are fixtures in a throwaway database, dropped
+    with it: nothing here is a measurement, a price or a result.
+    """
+    _ = require_postgres
+
+    with _probe_database(live_settings) as url:
+        _upgrade(url)
+
+        # (a) Provenance is append-only at the database, not by convention.
+        query(url, "INSERT INTO datasets (name) VALUES (:name)", {"name": "equity-daily"})
+        dataset_id = query(url, "SELECT id FROM datasets")[0][0]
+        query(
+            url,
+            "INSERT INTO dataset_provenance (dataset_id, source, row_count) "
+            "VALUES (:dataset, :source, :rows)",
+            {"dataset": dataset_id, "source": "https://example.invalid/equity/daily", "rows": 10},
+        )
+
+        with pytest.raises(Exception) as update:
+            query(url, "UPDATE dataset_provenance SET row_count = 999")
+        assert "dataset_provenance is append-only" in str(update.value)
+        assert _sqlstate(update.value) == "42501", "the refusal was not a privilege error"
+
+        with pytest.raises(Exception) as delete_provenance:
+            query(url, "DELETE FROM dataset_provenance")
+        assert "dataset_provenance is append-only" in str(delete_provenance.value)
+        assert query(url, "SELECT row_count FROM dataset_provenance") == [(10,)]
+
+        # (b) A dataset whose origin is recorded cannot be deleted.
+        with pytest.raises(Exception) as delete_dataset:
+            query(url, "DELETE FROM datasets WHERE id = :id", {"id": dataset_id})
+        assert "fk_dataset_provenance_dataset_id_datasets" in str(delete_dataset.value)
+        assert query(url, "SELECT count(*) FROM datasets") == [(1,)]
+
+        # (c) An experiment cannot claim a status nobody defined, and cannot
+        #     finish before it started.
+        with pytest.raises(Exception) as unknown_status:
+            query(url, "INSERT INTO experiments (name, status) VALUES ('probe', 'sideways')")
+        assert _sqlstate(unknown_status.value) == "23514", "not a check violation"
+
+        with pytest.raises(Exception) as finished_first:
+            query(
+                url,
+                "INSERT INTO experiments (name, finished_at) VALUES ('probe', now())",
+            )
+        assert _sqlstate(finished_first.value) == "23514", "not a check violation"
+
+        # (d) Metrics start empty. An experiment that has not run has no
+        #     results, and the schema must not suggest otherwise.
+        query(url, "INSERT INTO experiments (name) VALUES ('baseline')")
+        assert query(url, "SELECT metrics::text, status FROM experiments") == [("{}", "planned")]
+
+        # (e) Experiments outlive their strategy: deleting one is refused
+        #     rather than leaving results pointing at nothing.
+        query(url, "INSERT INTO strategies (name) VALUES ('breakout')")
+        strategy_id = query(url, "SELECT id FROM strategies")[0][0]
+        query(url, "UPDATE experiments SET strategy_id = :id", {"id": strategy_id})
+        with pytest.raises(Exception) as delete_strategy:
+            query(url, "DELETE FROM strategies WHERE id = :id", {"id": strategy_id})
+        assert "fk_experiments_strategy_id_strategies" in str(delete_strategy.value)
+        assert query(url, "SELECT count(*) FROM strategies") == [(1,)]
+
+        # (f) The trigger itself is present, and named. Internal triggers
+        #     are excluded: the foreign keys add their own, and their names
+        #     are PostgreSQL's to make up.
+        provenance_triggers = query(
+            url,
+            """
+            SELECT tgname FROM pg_trigger
+            WHERE tgrelid = 'dataset_provenance'::regclass AND NOT tgisinternal
+            """,
+        )
+        assert [row[0] for row in provenance_triggers] == ["dataset_provenance_append_only"]
+
+        # (g) Nothing in the whole schema stores a timestamp without a zone:
+        #     a naive one would let the server's local time into research
+        #     data and make runs from two machines disagree.
+        naive_timestamps = query(
+            url,
+            """
+            SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND data_type = 'timestamp without time zone'
+            """,
+        )
+        assert naive_timestamps == [], "a naive timestamp would let a local zone leak in"
+
+        # (h) Nothing stores a number approximately. Prices and money are
+        #     exact or they are not recorded - database.md section 4.
+        approximate = query(
+            url,
+            """
+            SELECT table_name, column_name, data_type FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND data_type IN ('double precision', 'real')
+            """,
+        )
+        assert approximate == [], "a float column would make money arithmetic wrong"
