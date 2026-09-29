@@ -10,7 +10,7 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 ## [Unreleased]
 
-### Phase 3 — market-data engine (in progress)
+### Phase 3 — market-data engine (complete)
 
 #### Added
 
@@ -62,12 +62,42 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
   SDK.** Provider independence is the sort of rule that erodes one
   convenient import at a time; parsing every file turns it into something
   a red build can contradict.
+- **A transport and one concrete adapter** — `HttpTransport` with a
+  stdlib-only `UrllibTransport`: a status code is returned rather than
+  raised, because telling a wrong symbol from wrong credentials is the
+  adapter's judgement rather than a socket's, and a request that never
+  got an answer becomes `ProviderUnavailable`. Behind it,
+  `KrakenProvider` for Kraken's public OHLC feed, chosen because it needs
+  no key — so the class of bug that writes a secret into a log is
+  structurally impossible here — and because prices arrive as decimal
+  strings, so nothing is rounded on the way in before anyone has decided
+  that rounding is acceptable. It pages without sorting, drops the
+  not-yet-committed candle by arithmetic rather than by position, drops
+  the repeat a page boundary creates while leaving a duplicate the
+  provider itself sent for validation to count, and maps only the two
+  error responses actually observed against the live endpoint; anything
+  else Kraken says goes out through the base class carrying the
+  provider's own words. `RAISED_ERRORS` and `NOT_RAISED_ERRORS` enumerate
+  what it can and cannot raise, and a test asserts the pair covers every
+  failure the package declares. An opt-in live test composes the whole
+  path and skips visibly when it is not asked for.
+- **The ingestion job** `hqos data ingest` — fetch, validate, write the
+  artefacts, register the manifest row, in that order, with the database
+  proved reachable before the network is used so that an unusable
+  database costs one refused connection rather than a fetch nothing can
+  record. An invalid batch exits 1 with a quarantine record and no
+  manifest row; a successful one prints counts, quality status, version
+  and paths — never a price, because an ingest summary copied anywhere
+  must not read as a result.
 
 #### Not yet delivered
 
-Provider adapters and ingestion — so nothing has been fetched and the
-store is empty — the session-calendar and second-source cross-checks, and
-the corporate-actions, news, fundamentals and options interfaces.
+A second provider; scheduled or resumable ingestion (the operator names
+every window, and nothing resumes from the last stored bar); the full
+validation report of a *successful* run, of which only the status, reasons
+and notes reach the manifest; the session-calendar and second-source
+cross-checks; and the corporate-actions, news, fundamentals and options
+interfaces.
 
 ### Phase 2 — database and authentication (complete)
 

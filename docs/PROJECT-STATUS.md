@@ -26,7 +26,7 @@
 | Repository layout           | `apps/`, `packages/`, `src/`, `agents/`, `docs/`, `tests/`, `scripts/`, `infrastructure/` |
 | Documentation               | Complete for Phases 0–2 (architecture, development, security, operations, research, ADRs) |
 | Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log`, `datasets`, `dataset_provenance`, `strategies`, `experiments`, `journal_entries` |
-| Migrations                  | Two revisions (`930c38609bc3` → `3842df3d0db8`); empty → head → empty is covered by a test |
+| Migrations                  | Three revisions (`930c38609bc3` → `3842df3d0db8` → `7c4d9e2a15b3`); empty → head → empty is covered by a test |
 | Backup and restore          | `harsh_quant_os.db.backup` — binary COPY with the schema revision in the manifest; round trip proved by a test |
 | Authentication              | `AuthService`: Argon2id, sessions in PostgreSQL, `hqos_session` cookie |
 | Audit log                   | Append-only by trigger and `CHECK` constraint; every login outcome recorded |
@@ -40,6 +40,8 @@
 | Market-data interfaces      | `harsh_quant_os.data` — provider-neutral `Bar`/`BarRequest`, `HistoricalDataProvider` and `MarketDataProvider`, typed provider failures; a test fails the build if anything under `src/` imports a vendor SDK |
 | Validation pipeline         | `harsh_quant_os.data.validation` — schema quarantine, timestamp ordering, duplicates, gaps, outliers; session calendar and second-source cross-check not implemented |
 | Dataset store + manifest    | `data/raw`, `data/clean`, `data/quarantine` written content-addressed and atomically; `datasets` carries quality status, version and storage path with three check constraints; provenance appended per acquisition |
+| Market-data adapter         | `KrakenProvider` — Kraken's public OHLC feed behind `HttpTransport` (stdlib client, no key, prices as decimal strings); paging, an unfinished candle and both observed error responses are handled explicitly, and an opt-in live test composes the whole path |
+| Ingestion job               | `hqos data ingest` — fetch → validate → store → register in one command; refuses (exit 1) and quarantines a batch validation rejects; database proved reachable before any network call |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
@@ -56,6 +58,9 @@ npm run db:migrate # apply Alembic migrations (redacted output)
 
 hqos db backup  --output data/backups/2026-09-29 # every table, one transaction
 hqos db restore --source data/backups/2026-09-29 # refuses a populated target
+
+hqos data ingest --symbol XBTUSD --timeframe 1h `
+  --start 2026-09-01T00:00:00+00:00 --end 2026-09-28T00:00:00+00:00
 ```
 
 `data/` is ignored by Git in its entirety, so a backup written beneath it is
@@ -88,11 +93,15 @@ defect.
 
 - Nightly scheduling of backups, and where backup output is stored off-machine
 - Rate limiting and a per-request CSRF token
-- Market-data **adapters and ingestion** — Phase 3. Interfaces,
-  validation, the store and its manifest all exist; nothing has been
-  fetched, so the store holds no data and no provider has been called.
-  The session-calendar and second-source cross-checks have no
-  implementation either.
+- Market-data **ingestion, scheduled and resumable** — Phase 3's adapter,
+  validation, store, manifest and the `hqos data ingest` command all
+  exist and have been exercised against a live public provider, but no
+  run is scheduled, nothing resumes from the last stored bar (the
+  operator names the window), and only one provider is implemented. A
+  second provider, the session-calendar check and the second-source
+  cross-check have no implementation either, and the full validation
+  report of a *successful* run is not persisted — only the status,
+  reasons and notes on the manifest row.
 - Market terminal and charts — Phase 4
 - Quant / feature engine — Phase 5
 - Backtesting engine — Phase 6
@@ -176,21 +185,46 @@ prints actual results.
    cannot run fails there rather than skipping).
 6. `.env` is provisioned except for `local_agent_token`, which is reserved
    for the human to supply (AGENTS.md section 3).
+7. **Phase 3's two stricter self-imposed criteria are only partly met**
+   (`docs/architecture/data-platform.md` §7): no run is scheduled and
+   nothing resumes from the last stored bar, so the operator names every
+   window; and the full validation report of a *successful* run is not
+   written to disk — only the status, reasons and notes on the manifest
+   row. The ROADMAP's own Phase 3 exit criteria are met; these two are
+   recorded here rather than rounded up.
 
 ---
 
 ## 6. Next step
 
-**Phase 3 is under way, on instruction.** Phase 2 was closed, validated and
-committed; the phase-boundary stop was then lifted by the human, so Phase 3
-(Market-data engine) began with the provider-independent interface layer.
+**Phase 3 (Market-data engine) has delivered its ROADMAP exit criteria.**
+The last undelivered bullet — a concrete provider adapter — landed as
+`KrakenProvider` behind `HttpTransport`, and the command that ties the
+pieces together landed as `hqos data ingest`.
 
-Next, in [ROADMAP.md](ROADMAP.md) order: one concrete provider adapter
-behind the interface — the last undelivered bullet of Phase 3. Phase 3's
-exit criteria — raw data lands with complete provenance, and invalid data
-is quarantined rather than silently repaired or invented — are **not** met
-yet: validation, the store and the manifest exist, but nothing has been
-fetched, so no data has landed anywhere.
+Observed on 2026-09-29 against Kraken's live public endpoint, with the
+repository at the commit being documented:
+
+- `hqos data ingest --symbol XBTUSD --timeframe 1h --start
+  2026-09-01T00:00:00+00:00 --end 2026-09-28T00:00:00+00:00` exited 0;
+- 649 candles received, 649 stored, 0 duplicates, 0 gaps;
+- quality status `suspect`, because 28 bars were flagged as outliers —
+  reported as found, not adjusted;
+- artefacts written under `data/clean/kraken.xbtusd.1h/<sha256>/` and
+  read back digit for digit;
+- one `datasets` row and one append-only `dataset_provenance` row, the
+  latter carrying source `https://api.kraken.com/0/public`, the SHA-256
+  checksum, the row count and the acquisition time.
+
+That is the ROADMAP's wording observed rather than asserted: **raw data
+lands with complete provenance**, and **invalid data is quarantined,
+never silently repaired or invented**. The live check is opt-in
+(`HQOS_LIVE_PROVIDER_TESTS=1`) and skips — visibly, as a skip — when it
+is not asked for.
+
+Not started: Phase 4 (Market terminal). Phase 3 stops here. Beginning
+the next phase is a boundary that needs the human's instruction, exactly
+as Phase 2's did.
 
 Carried forward, none of it Phase 3: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and

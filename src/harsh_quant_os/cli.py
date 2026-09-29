@@ -18,16 +18,34 @@ import platform
 import shutil
 import socket
 import sys
+import uuid
 from collections.abc import Callable, Coroutine, Sequence
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harsh_quant_os.auth import AuthService
 from harsh_quant_os.auth.errors import DatabaseUnavailable, DuplicateUser, PasswordPolicyError
 from harsh_quant_os.config import Settings, SettingsError
+from harsh_quant_os.contracts.provenance import DataQualityStatus, Timeframe
+from harsh_quant_os.data import (
+    BarRequest,
+    KrakenProvider,
+    MarketDataError,
+    QuarantineRecord,
+    StoredDataset,
+    StoreRefused,
+    UrllibTransport,
+    ValidationReport,
+    quarantine_batch,
+    store_batch,
+    validate_bars,
+)
+from harsh_quant_os.data.manifest import register_dataset
 from harsh_quant_os.db import (
     BackupError,
     BackupManifest,
@@ -109,6 +127,58 @@ def _build_parser() -> argparse.ArgumentParser:
         "--replace-existing",
         action="store_true",
         help="Discard rows already in the target database.",
+    )
+
+    data = subparsers.add_parser(
+        "data",
+        help="Fetch, validate and store market data for research.",
+    )
+    data_commands = data.add_subparsers(dest="data_command", required=True)
+
+    ingest = data_commands.add_parser(
+        "ingest",
+        help=(
+            "Fetch real candles, validate them, write the artefacts and "
+            "register the manifest row. Exits 1 and quarantines the batch "
+            "when validation refuses it."
+        ),
+    )
+    ingest.add_argument(
+        "--symbol",
+        required=True,
+        help="The provider's own spelling of the instrument, e.g. XBTUSD.",
+    )
+    ingest.add_argument(
+        "--timeframe",
+        required=True,
+        choices=[value.value for value in Timeframe],
+        help="Bar size, in the provider's vocabulary.",
+    )
+    ingest.add_argument(
+        "--start",
+        required=True,
+        help="Instant to fetch from, ISO 8601, carrying its offset (e.g. ...+00:00).",
+    )
+    ingest.add_argument(
+        "--end",
+        default=None,
+        help="Instant to stop at, ISO 8601 with its offset. Optional.",
+    )
+    ingest.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Stop after this many bars. Optional.",
+    )
+    ingest.add_argument(
+        "--name",
+        default=None,
+        help="Dataset name. Defaults to kraken.<symbol>.<timeframe>.",
+    )
+    ingest.add_argument(
+        "--store",
+        default="data",
+        help="Directory to write the dataset into (default: data).",
     )
     return parser
 
@@ -323,6 +393,203 @@ def _restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_instant(value: str, flag: str) -> datetime:
+    """Read an absolute instant that carries its own offset.
+
+    A timestamp without one would mean local time, and a window that
+    drifted by the machine's offset would produce a dataset whose
+    provenance was wrong by hours while every line of it looked correct.
+    Refusing beats guessing.
+    """
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        raise _CliError(f"{flag} is not an ISO 8601 instant: {value!r}") from None
+    if parsed.tzinfo is None:
+        raise _CliError(f"{flag} carries no UTC offset; write it as 2026-01-01T00:00:00+00:00")
+    return parsed.astimezone(UTC)
+
+
+async def _confirm_database_is_there(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    """Prove the manifest can be written *before* anything is fetched.
+
+    Fetched bars with nowhere to register them are an orphan: the
+    artefacts exist and nothing in the platform can find them. One round
+    trip costs less than that, and it means an unreachable database is
+    reported before the network is used rather than after it.
+    """
+    async with session_factory() as session:
+        await session.execute(text("SELECT 1"))
+
+
+def _ingest_summary(
+    stored: StoredDataset,
+    report: ValidationReport,
+    *,
+    dataset_id: uuid.UUID,
+    store_root: Path,
+) -> str:
+    """Everything observed about an ingest that succeeded, and nothing else.
+
+    Deliberately no prices: what is printed is the state of the store and
+    the verdict of validation, so a summary pasted into an issue or a
+    message cannot be read as a performance figure or as a result.
+    """
+    accepted = report.accepted_bars
+    window = (
+        f"{accepted[0].timestamp.isoformat()} .. {accepted[-1].timestamp.isoformat()}"
+        if accepted
+        else "(none)"
+    )
+    lines = [
+        "ingested",
+        f"  dataset         : {stored.name}",
+        f"  source          : {stored.source}",
+        f"  instrument      : {stored.instrument}",
+        f"  timeframe       : {stored.timeframe.value}",
+        f"  window          : {window}",
+        f"  rows received   : {stored.received}",
+        f"  rows stored     : {stored.row_count}",
+        f"  duplicates      : {stored.duplicates_removed}",
+        f"  gaps            : {stored.gaps}",
+        f"  outliers        : {stored.outliers}",
+        f"  quality status  : {stored.quality_status.value}",
+        f"  version         : {stored.version}",
+        f"  store           : {store_root.resolve()}",
+        f"  clean artefact  : {stored.clean_path}",
+        f"  manifest id     : {dataset_id}",
+    ]
+    lines.extend(f"  reason          : {reason}" for reason in stored.reasons)
+    lines.extend(f"  note            : {note}" for note in stored.notes)
+    return "\n".join(lines)
+
+
+def _quarantine_summary(record: QuarantineRecord, *, store_root: Path) -> str:
+    """What happened to a batch validation refused.
+
+    The wording is the point: nothing was written to ``clean/``, no
+    manifest row exists, and the batch is kept where the refusal can be
+    examined later rather than having to be reproduced from scratch.
+    """
+    lines = [
+        "batch refused",
+        f"  dataset         : {record.name}",
+        f"  source          : {record.source}",
+        f"  quality status  : {record.status.value}",
+        f"  rows received   : {record.received}",
+        f"  store           : {store_root.resolve()}",
+        f"  payload         : {record.payload_path}",
+        f"  report          : {record.report_path}",
+        "  manifest        : not written; a refused batch is not a dataset",
+    ]
+    lines.extend(f"  reason          : {reason}" for reason in record.reasons)
+    return "\n".join(lines)
+
+
+def _ingest(args: argparse.Namespace) -> int:
+    """Fetch real candles, then say exactly what became of them."""
+    # Arguments are judged before configuration or the network is touched:
+    # a typo in a timestamp is the operator's to fix, and finding out
+    # about it costs nothing if nothing else has happened yet.
+    timeframe = Timeframe(args.timeframe)
+    start = _parse_instant(args.start, "--start")
+    end = None if args.end is None else _parse_instant(args.end, "--end")
+    if end is not None and end <= start:
+        raise _CliError("--end is not after --start")
+    if args.limit is not None and args.limit < 1:
+        raise _CliError("--limit must be at least 1 bar")
+
+    settings = _load_settings()
+    _require_database(settings)
+
+    name = args.name or f"kraken.{args.symbol.lower()}.{timeframe.value}"
+    store_root = Path(args.store)
+
+    async def _run() -> int:
+        engine = build_engine(settings.database_url)
+        try:
+            session_factory = build_session_factory(engine)
+            await _confirm_database_is_there(session_factory)
+
+            provider = KrakenProvider(UrllibTransport())
+            bars = list(
+                await provider.fetch_bars(
+                    BarRequest(
+                        symbol=args.symbol,
+                        timeframe=timeframe,
+                        start=start,
+                        end=end,
+                        limit=args.limit,
+                    )
+                )
+            )
+            if not bars:
+                # An empty window is an answer, not an error: the provider
+                # said there was nothing committed there. Reporting it as a
+                # failure would claim knowledge of why.
+                raise _CliError("the provider returned no committed candles for that window")
+
+            report = validate_bars(bars, timeframe=timeframe)
+
+            if report.status is DataQualityStatus.INVALID:
+                record = quarantine_batch(
+                    store_root,
+                    name=name,
+                    source=provider.source,
+                    raw_bars=bars,
+                    report=report,
+                )
+                print(_quarantine_summary(record, store_root=store_root))
+                return 1
+
+            stored = store_batch(
+                store_root,
+                name=name,
+                source=provider.source,
+                raw_bars=bars,
+                report=report,
+            )
+
+            try:
+                dataset_id = await register_dataset(session_factory, stored)
+            except SQLAlchemyError as exc:
+                # Half-done, and it may not be reported as done: artefacts
+                # exist with no manifest row pointing at them, which is a
+                # state to fix rather than a state to celebrate.
+                raise _CliError(
+                    "the bars were stored but not registered "
+                    f"(error type: {type(exc).__name__}); the manifest row is "
+                    "missing, so re-run this command before relying on the dataset"
+                ) from None
+
+            print(_ingest_summary(stored, report, dataset_id=dataset_id, store_root=store_root))
+            return 0
+        finally:
+            await dispose_engine(engine)
+
+    try:
+        return asyncio.run(_run())
+    except StoreRefused as exc:
+        # The store's own refusal, with its reason and a path - never a
+        # payload. Nothing was written to clean/, which is the whole point.
+        raise _CliError(str(exc)) from None
+    except MarketDataError as exc:
+        # The adapter's own wording: a provider's words, a symbol, an HTTP
+        # status. This provider never carries a credential, so there is
+        # nothing of ours in these messages to redact.
+        raise _CliError(str(exc)) from None
+    except (ConnectionError, TimeoutError, socket.gaierror, SQLAlchemyError) as exc:
+        raise _CliError(
+            "could not ingest: the database did not accept the connection "
+            f"(error type: {type(exc).__name__}); is it running? see `npm run db:start`"
+        ) from None
+    except OSError as exc:
+        raise _CliError(
+            f"could not ingest: an I/O operation failed (error type: {type(exc).__name__}); "
+            "check that the store directory exists and is writable"
+        ) from None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return a process exit code."""
     args = _build_parser().parse_args(list(argv) if argv is not None else None)
@@ -352,6 +619,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         handler = _backup if args.db_command == "backup" else _restore
         try:
             return handler(args)
+        except _CliError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    if args.command == "data":
+        if args.data_command != "ingest":
+            print(f"Unknown command: data {args.data_command}", file=sys.stderr)
+            return 2
+        try:
+            return _ingest(args)
         except _CliError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

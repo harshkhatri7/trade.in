@@ -125,7 +125,7 @@ using the instrument's exchange calendar, never the machine's local clock.
 
 ---
 
-## 6. Current state (Phase 3 — interfaces, validation, storage; no ingestion)
+## 6. Current state (Phase 3 — interfaces, validation, storage, ingestion)
 
 Implemented and tested:
 
@@ -166,20 +166,61 @@ Implemented and tested:
   appended for every acquisition. Registration happens after the files are
   on disk, because a manifest row pointing at a file that was never
   written is worse than no row.
+- **The transport** (`harsh_quant_os.data.transport`) — an `HttpTransport`
+  protocol and a stdlib-only `UrllibTransport`. A status code is returned
+  rather than raised, because telling a wrong symbol from wrong
+  credentials is the adapter's judgement and not a socket's; a request
+  that never got an answer becomes `ProviderUnavailable`. Verified against
+  a loopback HTTP server, not against a mock.
+- **One concrete adapter** (`harsh_quant_os.data.adapters.kraken`) —
+  Kraken's public OHLC feed, chosen because it needs no key (so the class
+  of bug that writes a secret into a log is structurally impossible here)
+  and quotes prices as decimal strings (so nothing is rounded before
+  anyone has decided that rounding is acceptable). It pages without
+  sorting, drops the not-yet-committed candle by arithmetic rather than by
+  position, drops the repeat a page boundary creates while leaving a
+  duplicate the provider itself sent for validation to count, and maps
+  only the two error responses actually observed — anything else goes out
+  through the base class carrying the provider's own words. What it can
+  and cannot raise is enumerated in `RAISED_ERRORS`/`NOT_RAISED_ERRORS`
+  and asserted to cover every failure the package declares.
+- **The ingestion job** (`hqos data ingest` in
+  `harsh_quant_os.cli`) — fetch, validate, write the artefacts, register
+  the manifest row, in that order, with the database proved reachable
+  *before* the network is used so an unusable database costs one refused
+  connection rather than a fetch that cannot be recorded. Validation is
+  authoritative: an invalid batch exits 1 with a quarantine record and no
+  manifest row, and the summary it prints describes the store — counts,
+  status, version, paths — and never a price.
 - A test that parses every file under `src/` and fails if any imports a
   vendor SDK — principle 1, made executable rather than aspirational.
 
-Not implemented: adapters and ingestion, the session calendar and
-second-source cross-check, and the four interfaces in section 2 without
-an implementation. Nothing has been fetched, so no data has landed in the
-store yet.
+Not implemented: a second provider; any scheduled or resumable ingestion
+(the operator names the window); the session calendar and second-source
+cross-check; and the four interfaces in section 2 without an
+implementation. Whether data has landed is workspace state rather than a
+property of a fresh checkout — `data/` is not committed — so the evidence
+for that lives in `docs/PROJECT-STATUS.md`, which records what was
+observed and when.
 
 ---
 
 ## 7. Phase 3 exit criteria
 
-- Two paths into storage: historical backfill and incremental update.
-- Full provenance on every stored dataset.
-- Validation report per ingestion run, stored and queryable.
-- Gaps reported as gaps; no invented values anywhere.
-- A dataset can be re-ingested and produce an identical version.
+The ROADMAP's own wording is the binding one: *raw data lands with
+complete provenance; invalid data is quarantined, never silently repaired
+or invented.* That has been observed end to end — a real fetch of 649
+hourly candles, validated, stored, registered with a checksum and a
+source, with 28 outlier bars flagged and reported as found rather than
+adjusted (recorded in `docs/PROJECT-STATUS.md`).
+
+The five criteria below are the stricter set this document set itself.
+Two are only partly met, and are named as such rather than rounded up:
+
+| # | Criterion | State | Evidence or gap |
+| - | --------- | ----- | --------------- |
+| 1 | Two paths into storage: historical backfill and incremental update | **Partly met** | `hqos data ingest --start … [--end …]` fetches any window, so a backfill and a later append are both one command. Nothing yet reads the manifest to resume from the last stored bar, so the incremental boundary is the operator's to supply, and no run is scheduled. |
+| 2 | Full provenance on every stored dataset | Met | Each registered dataset carries instrument, timeframe, quality status, version and storage path on its `datasets` row, plus an append-only `dataset_provenance` row with source, SHA-256 checksum, row count and acquisition time. |
+| 3 | Validation report per ingestion run, stored and queryable | **Partly met** | Quality status, reasons and notes are queryable from the manifest, and the full report is written to disk beside a *refused* batch. A successful run does not persist its report. |
+| 4 | Gaps reported as gaps; no invented values anywhere | Met | `validate_bars` records gap intervals and never fills them; outliers are reported, never adjusted; the store refuses an invalid batch instead of repairing it. |
+| 5 | A dataset can be re-ingested and produce an identical version | Met | The store is content-addressed by the SHA-256 of the clean artefact, and a file already holding that content is reused rather than rewritten. |
