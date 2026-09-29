@@ -13,9 +13,11 @@ and stop there; the decision-making lives in the application service.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import cast
 
 from fastapi import Request
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harsh_quant_os.auth.errors import SessionInvalid
 from harsh_quant_os.auth.service import AuthenticatedContext, AuthService
@@ -50,6 +52,29 @@ def get_auth_service(request: Request) -> AuthService:
     return cast(AuthService, request.app.state.auth_service)
 
 
+def get_session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
+    """Return the session maker installed by the application factory.
+
+    Read-only handlers receive the real one: handing a reader a private
+    factory would mean testing a wiring the process does not have. What
+    makes these callers safe is that they only ever select.
+    """
+    return cast(async_sessionmaker[AsyncSession], request.app.state.session_factory)
+
+
+def get_store_root(request: Request) -> Path:
+    """Return the dataset store this application reads artefacts from.
+
+    Resolved per request rather than captured when the router is built,
+    so a test can point one application at a store of its own without the
+    reader knowing anything changed. The factory pins it to
+    ``DEFAULT_STORE_ROOT``; there is no setting for it, because every
+    entry point in this repository runs from the repository root and the
+    directory is workspace state, not configuration.
+    """
+    return cast(Path, request.app.state.store_root)
+
+
 async def get_auth_context(request: Request) -> AuthenticatedContext:
     """Resolve the session cookie into a live session, or fail.
 
@@ -72,5 +97,7 @@ __all__ = [
     "get_auth_context",
     "get_auth_service",
     "get_database_ping",
+    "get_session_factory",
+    "get_store_root",
     "request_id",
 ]

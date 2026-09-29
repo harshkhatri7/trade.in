@@ -40,7 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from harsh_quant_os.data.store import StoredDataset
 from harsh_quant_os.db.models import Dataset, DatasetProvenance
 
-__all__ = ["dataset_by_name", "register_dataset"]
+__all__ = ["dataset_by_name", "list_datasets", "provenance_history", "register_dataset"]
 
 
 def _describe(reasons: Sequence[str], notes: Sequence[str]) -> str | None:
@@ -121,3 +121,46 @@ async def dataset_by_name(
     """
     async with session_factory() as session:
         return await session.scalar(select(Dataset).where(Dataset.name == name))
+
+
+async def list_datasets(session_factory: async_sessionmaker[AsyncSession]) -> list[Dataset]:
+    """Every manifest row, ordered by name.
+
+    Name order rather than recency: the directory is a lookup, and an
+    order that changes whenever an ingest finishes would move rows out
+    from under someone reading them.
+    """
+    async with session_factory() as session:
+        rows = await session.scalars(select(Dataset).order_by(Dataset.name))
+        return list(rows)
+
+
+async def provenance_history(
+    session_factory: async_sessionmaker[AsyncSession],
+    dataset_ids: Sequence[uuid.UUID],
+) -> dict[uuid.UUID, list[DatasetProvenance]]:
+    """Acquisition records for ``dataset_ids``, newest first, one query.
+
+    Newest first, because the terminal should show the acquisition that
+    describes the artefact currently on disk before the ones it replaced:
+    provenance is append-only, so a re-ingest adds a row rather than
+    revising one. ``created_at`` breaks ties so that two acquisitions
+    recorded in the same instant still have exactly one order. Every
+    requested id appears in the result, mapped to an empty list when it
+    has no history yet - "no record" is an answer, not a missing key.
+    """
+    history: dict[uuid.UUID, list[DatasetProvenance]] = {dataset_id: [] for dataset_id in dataset_ids}
+    if not history:
+        return history
+    async with session_factory() as session:
+        rows = await session.scalars(
+            select(DatasetProvenance)
+            .where(DatasetProvenance.dataset_id.in_(list(history)))
+            .order_by(
+                DatasetProvenance.acquired_at.desc(),
+                DatasetProvenance.created_at.desc(),
+            )
+        )
+        for row in rows:
+            history[row.dataset_id].append(row)
+    return history

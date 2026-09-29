@@ -93,6 +93,29 @@ See [secrets management](../security/secrets-management.md).
 Versioning and the shared-contract strategy are recorded in
 [ADR-0002](../decisions/ADR-0002-shared-contract-without-codegen.md).
 
+**Dataset reads (Phase 4, in progress)** — `GET /api/v1/datasets`,
+`GET /api/v1/datasets/{name}` and `GET /api/v1/datasets/{name}/bars`:
+
+- Read-only, `GET` only, versioned only — no unversioned alias, because a
+  load balancer has no business listing research data.
+- Unauthenticated under section 6: they expose public market data and the
+  record of where it came from, not an account, a session, a strategy, a
+  position or an order. The loopback bind and the CORS allow-list are what
+  keep them local; publishing research data beyond loopback would make
+  authentication the first change, not the last.
+- Cursor pagination in the convention above: `limit`, `start`/`end` bounds
+  and `cursor`, with `has_more` and `next_cursor`.
+- A timestamp without a UTC offset is refused (`422`), and so is an
+  inverted window — otherwise a caller's mistake and a genuinely empty
+  range would both answer `returned: 0` and the response could no longer
+  tell them apart.
+- Unknown name is `404`. A manifest row that exists but cannot be read —
+  no artefact, no timeframe, a path that leaves the store, or a file gone
+  from `data/` — is `409`, never a shorter series than the manifest
+  claims.
+- Every bars response carries the dataset `version` it was read from, so a
+  figure drawn from it can name its artefact.
+
 ---
 
 ## 5. Error handling and logging
@@ -112,7 +135,11 @@ Versioning and the shared-contract strategy are recorded in
   account: `GET /api/v1/me` and `POST /api/v1/auth/logout` answer `401`
   without a valid session, and there is no anonymous write path.
   `/health` and `/ready` stay unauthenticated on purpose — a probe that
-  needs a credential cannot tell you whether the process is alive.
+  needs a credential cannot tell you whether the process is alive. The
+  dataset read endpoints stay unauthenticated by the same rule: they are
+  `GET`-only reads of public market data and its provenance, they name no
+  account, and section 4 records what changes if that data is ever
+  published beyond loopback.
 - **Rate limiting and a per-request CSRF token are not implemented.**
   Authentication landed in Phase 2; these two did not. What is in force is
   `SameSite=Lax` on the session cookie, a `127.0.0.1` bind by default and an

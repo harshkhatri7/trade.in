@@ -1,0 +1,89 @@
+{
+  "dataset_list": {
+    "datasets": [
+      {
+        "name": "kraken.xbtusd.1h",
+        "instrument": "XBTUSD",
+        "timeframe": "1h",
+        "quality_status": "suspect",
+        "version": "0f27a08bfb355c898c0b8948da590c50dc612371599e34675f56c72ea8393883",
+        "storage_path": "clean/kraken.xbtusd.1h/0f27a08bfb355c898c0b8948da590c50dc612371599e34675f56c72ea8393883/bars.csv",
+        "source": "https://api.kraken.com/0/public",
+        "acquired_at": "2026-09-28T06:15:30.123456Z",
+        "row_count": 649,
+        "updated_at": "2026-09-28T06:15:30.123456Z"
+      },
+      {
+        "name": "example.pending.1d",
+        "instrument": null,
+        "timeframe": null,
+        "quality_status": "pending",
+        "version": null,
+        "storage_path": null,
+        "source": null,
+        "acquired_at": null,
+        "row_count": null,
+        "updated_at": "2026-09-28T07:00:00Z"
+      }
+    ]
+  },
+  "dataset_detail": {
+    "dataset": {
+      "name": "kraken.xbtusd.1h",
+      "instrument": "XBTUSD",
+      "timeframe": "1h",
+      "quality_status": "suspect",
+      "version": "0f27a08bfb355c898c0b8948da590c50dc612371599e34675f56c72ea8393883",
+      "storage_path": "clean/kraken.xbtusd.1h/0f27a08bfb355c898c0b8948da590c50dc612371599e34675f56c72ea8393883/bars.csv",
+      "source": "https://api.kraken.com/0/public",
+      "acquired_at": "2026-09-28T06:15:30.123456Z",
+      "row_count": 649,
+      "updated_at": "2026-09-28T06:15:30.123456Z"
+    },
+    "provenance": [
+      {
+        "acquired_at": "2026-09-28T06:15:30.123456Z",
+        "source": "https://api.kraken.com/0/public",
+        "checksum_sha256": "6d0e2ba2b2f4b68e4e5b0b4a18f0c0e4d6f8b1a2c3d4e5f60718293a4b5c6d7e",
+        "row_count": 649,
+        "notes": "28 bar(s) flagged as outliers; values are reported as found, not adjusted"
+      },
+      {
+        "acquired_at": "2026-09-21T06:15:12.654321Z",
+        "source": "https://api.kraken.com/0/public",
+        "checksum_sha256": "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
+        "row_count": 481,
+        "notes": "schema, ordering, duplicates, gaps and outliers all checked"
+      }
+    ]
+  },
+  "dataset_bars": {
+    "name": "kraken.xbtusd.1h",
+    "version": "0f27a08bfb355c898c0b8948da590c50dc612371599e34675f56c72ea8393883",
+    "instrument": "XBTUSD",
+    "timeframe": "1h",
+    "quality_status": "suspect",
+    "source": "https://api.kraken.com/0/public",
+    "bars": [
+      {
+        "timestamp": "2026-09-01T00:00:00Z",
+        "open": "78563.0",
+        "high": "78854.2",
+        "low": "78562.9",
+        "close": "78613.7",
+        "volume": "30.04552452"
+      },
+      {
+        "timestamp": "2026-09-01T01:00:00Z",
+        "open": "78614.4",
+        "high": "78772.6",
+        "low": "78364.2",
+        "close": "78382.1",
+        "volume": "36.72525879"
+      }
+    ],
+    "returned": 2,
+    "has_more": true,
+    "next_cursor": "2026-09-01T01:00:00Z"
+  }
+}

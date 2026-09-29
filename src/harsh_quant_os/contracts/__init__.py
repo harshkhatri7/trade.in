@@ -6,6 +6,14 @@ from harsh_quant_os.contracts.auth import (
     SessionProfile,
     UserProfile,
 )
+from harsh_quant_os.contracts.datasets import (
+    BarPoint,
+    DatasetBarsResponse,
+    DatasetDetailResponse,
+    DatasetListResponse,
+    DatasetProvenanceEntry,
+    DatasetSummary,
+)
 from harsh_quant_os.contracts.jobs import JobOperation, JobStatus, LocalAgentJob
 from harsh_quant_os.contracts.provenance import (
     DataQualityStatus,
@@ -26,9 +34,15 @@ from harsh_quant_os.contracts.system import (
 __all__ = [
     "ApiEnvironment",
     "AuthContextResponse",
+    "BarPoint",
     "CheckStatus",
     "DataQualityStatus",
+    "DatasetBarsResponse",
+    "DatasetDetailResponse",
+    "DatasetListResponse",
     "DatasetProvenance",
+    "DatasetProvenanceEntry",
+    "DatasetSummary",
     "HealthResponse",
     "HealthStatus",
     "JobOperation",

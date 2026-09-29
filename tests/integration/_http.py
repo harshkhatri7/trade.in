@@ -78,8 +78,21 @@ def wait_until_healthy(process: subprocess.Popen[str], base_url: str) -> None:
 
 
 @contextmanager
-def running_api(extra_env: dict[str, str] | None = None) -> Iterator[str]:
-    """Run a real uvicorn process and hand back its base URL."""
+def running_api(
+    extra_env: dict[str, str] | None = None,
+    *,
+    cwd: Path = REPO_ROOT,
+) -> Iterator[str]:
+    """Run a real uvicorn process and hand back its base URL.
+
+    ``cwd`` is the directory the process runs from and therefore where its
+    relative paths resolve. It defaults to the repository root; a test that
+    passes a temporary directory gets an application whose dataset store
+    lives inside that directory rather than in the workspace, so the test
+    can write a store of its own without touching real files. Every path the
+    child needs to import is absolute, so changing the directory changes
+    only what the process resolves at run time, not what it can load.
+    """
     port = free_port()
     base_url = f"http://127.0.0.1:{port}"
     process = subprocess.Popen(
@@ -95,7 +108,7 @@ def running_api(extra_env: dict[str, str] | None = None) -> Iterator[str]:
             "--port",
             str(port),
         ],
-        cwd=REPO_ROOT,
+        cwd=cwd,
         env=subprocess_env(extra_env),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

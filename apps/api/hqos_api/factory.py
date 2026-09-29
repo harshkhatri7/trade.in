@@ -8,7 +8,9 @@ a single explicit :class:`~harsh_quant_os.config.Settings` instance:
 * development CORS restricted to configured origins,
 * the system routers, mounted at ``/api/v1`` plus their unversioned aliases,
 * the authentication router, mounted at ``/api/v1`` only - authentication is
-  an application API, not a probe, so it has no unversioned alias.
+  an application API, not a probe, so it has no unversioned alias,
+* the dataset router, also ``/api/v1`` only - reading a dataset is a
+  research operation, not something a load balancer probes.
 
 There is no module-level application object in this module: tests build an app
 with their own settings, and ``apps/api/main.py`` owns the process-wide one.
@@ -27,10 +29,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from harsh_quant_os.auth import AuthService
 from harsh_quant_os.config import Settings
+from harsh_quant_os.data import DEFAULT_STORE_ROOT
 from harsh_quant_os.db import build_engine, build_session_factory, dispose_engine, ping_database
 from harsh_quant_os.safety import assert_live_trading_blocked
 from hqos_api.core import configure_logging, install_error_handlers, install_request_context
-from hqos_api.routers import create_auth_router, create_system_router
+from hqos_api.routers import create_auth_router, create_datasets_router, create_system_router
 from hqos_api.services import service_name
 
 logger = logging.getLogger(__name__)
@@ -43,9 +46,12 @@ _CORS_METHODS = ["GET", "POST", "HEAD", "OPTIONS"]
 _CORS_HEADERS = ["Accept", "Content-Type", "X-Request-ID"]
 
 _DESCRIPTION = (
-    "Private quantitative trading research platform. Phase 2 exposes system "
-    "status and session authentication against PostgreSQL: no market data, no "
-    "orders, and no trading. Live trading is disabled at configuration load."
+    "Private quantitative trading research platform. It serves system status, "
+    "session authentication against PostgreSQL, and a read-only view of the "
+    "market datasets that have been ingested - their provenance, their quality "
+    "status and the bars stored on disk, each response tagged with the dataset "
+    "version it came from. No orders and no trading: live trading is disabled "
+    "at configuration load."
 )
 
 
@@ -110,6 +116,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.database_engine = engine
     app.state.session_factory = session_factory
     app.state.auth_service = auth_service
+    # Where dataset artefacts are read from. Pinned here rather than read
+    # from settings because it is workspace state that follows the
+    # process's working directory, not configuration; a test points one
+    # application at a store of its own by replacing this attribute.
+    app.state.store_root = DEFAULT_STORE_ROOT
     # One ping, built once from this engine, so readiness and the dependency
     # graph can never disagree about which database they mean.
     app.state.database_ping = partial(ping_database, engine)
@@ -133,6 +144,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Versioned only: authentication is part of the application API, and
     # probes such as Docker or a load balancer have no business logging in.
     app.include_router(create_auth_router(resolved), prefix="/api/v1")
+
+    # Versioned only for the same reason: reading a dataset is a research
+    # operation, not a liveness probe, so it gets exactly one spelling.
+    app.include_router(create_datasets_router(resolved), prefix="/api/v1")
 
     return app
 

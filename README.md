@@ -15,28 +15,32 @@ paper-trading loop with strict risk control.
 
 ---
 
-## Current state (Phase 1)
+## Current state (Phase 4 — in progress)
 
-Phase 0 delivered the **development foundation**: repository layout,
-documentation, tooling, safety gates, contracts, tests and CI. Phase 1 adds
-the **application skeleton**: a FastAPI service and a Next.js shell joined by
-a typed, tested contract. There is no dashboard, no market data, no strategy,
-no signal, no backtest engine and no trading.
+Phases 0–3 are complete: the **development foundation** (repository
+layout, documentation, tooling, safety gates, contracts, tests, CI), the
+**application skeleton** (a FastAPI service and a Next.js shell joined by
+a typed, tested contract), **PostgreSQL with session authentication**, and
+the **market-data engine** (a Kraken adapter, validation, a dataset store
+with provenance, and `hqos data ingest`). Phase 4, the market terminal,
+has delivered its read-only dataset API; there is still no dashboard, no
+chart, no strategy, no signal, no backtest engine and no trading.
 
 | Subsystem        | Status                               |
 | ---------------- | ------------------------------------ |
 | Repository/Git   | Initialized (`main`)                 |
-| API              | `/api/v1/health`, `/api/v1/ready`    |
+| API              | `/api/v1/health`, `/api/v1/ready`, auth, read-only `/api/v1/datasets` |
 | Web shell        | Next.js app showing the live API response |
 | Contract         | Python ⇄ TypeScript, parity tested   |
-| Authentication   | Not implemented (Phase 2, ADR-0003)  |
-| Documentation    | Complete for Phases 0–1              |
+| Authentication   | Implemented (Phase 2, ADR-0003)      |
+| Documentation    | Complete for Phases 0–3              |
 | Type checking    | Strict TypeScript + strict mypy      |
 | Lint/format      | Ruff (Python), ESLint + Prettier     |
 | Tests            | pytest + Vitest, all passing         |
 | Safety gates     | Implemented and tested               |
-| Database         | Not implemented (Phase 2)            |
-| Market data      | Not implemented (Phase 3)            |
+| Database         | PostgreSQL + Alembic (Phase 2)       |
+| Market data      | Adapter, validation, store, manifest (Phase 3) |
+| Market terminal  | Read-only dataset API; no chart or watchlist yet (Phase 4) |
 | Quant engine     | Not implemented (Phase 5)            |
 | Backtesting      | Not implemented (Phase 6)            |
 | Paper trading    | Not implemented (Phase 10)           |
@@ -113,7 +117,7 @@ npm run check
 `.env` is git-ignored and is never written by an agent: run the provisioning
 step yourself, and re-run it with `-Force` to rotate the generated values.
 
-Run the application (Phase 1: API + web):
+Run the application (API + web):
 
 ```powershell
 npm run dev        # API on http://127.0.0.1:8000 + web on http://127.0.0.1:3000

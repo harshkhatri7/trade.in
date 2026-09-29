@@ -4,7 +4,7 @@
 | -------------------- | ---------------------------------------------- |
 | **Project**          | HARSH QUANT OS                                 |
 | **Version**          | 0.1.0-alpha                                    |
-| **Current phase**    | 3 — Market-data engine (in progress)          |
+| **Current phase**    | 4 — Market terminal (in progress)            |
 | **Live trading**     | **DISABLED**                                   |
 | **Broker**           | **NOT CONNECTED**                              |
 | **Paper trading**    | NOT IMPLEMENTED                                |
@@ -24,14 +24,14 @@
 | --------------------------- | ------------------------------------------------------------ |
 | Git repository              | Initialized, branch `main`, no remote configured             |
 | Repository layout           | `apps/`, `packages/`, `src/`, `agents/`, `docs/`, `tests/`, `scripts/`, `infrastructure/` |
-| Documentation               | Complete for Phases 0–2 (architecture, development, security, operations, research, ADRs) |
+| Documentation               | Complete for Phases 0–3 (architecture, development, security, operations, research, ADRs) |
 | Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log`, `datasets`, `dataset_provenance`, `strategies`, `experiments`, `journal_entries` |
 | Migrations                  | Three revisions (`930c38609bc3` → `3842df3d0db8` → `7c4d9e2a15b3`); empty → head → empty is covered by a test |
 | Backup and restore          | `harsh_quant_os.db.backup` — binary COPY with the schema revision in the manifest; round trip proved by a test |
 | Authentication              | `AuthService`: Argon2id, sessions in PostgreSQL, `hqos_session` cookie |
 | Audit log                   | Append-only by trigger and `CHECK` constraint; every login outcome recorded |
 | Web application             | `apps/web` — Next.js 16 + React 19 + Tailwind 4 shell         |
-| API service                 | `apps/api` — FastAPI: health, readiness, login, logout, `/me`  |
+| API service                 | `apps/api` — FastAPI: health, readiness, login, logout, `/me`, and read-only dataset reads (directory, detail, stored bars)  |
 | API client                  | Typed client in `apps/web/src/api-client` with explicit loading / connected / error / unavailable states |
 | Shared contract             | Python models, TypeScript mirrors and fixtures, checked in both directions (system status and auth context) |
 | Configuration               | Typed `Settings` with safety validation (single source for env) |
@@ -75,6 +75,17 @@ never committed.
 | `POST /api/v1/auth/login` | Open a session; sets the `hqos_session` cookie                 |
 | `POST /api/v1/auth/logout`| Revoke the current session (`204`)                             |
 | `GET /api/v1/me`          | The authenticated account and its session                      |
+| `GET /api/v1/datasets`    | Every dataset with provenance, quality status and version      |
+| `GET /api/v1/datasets/{name}` | One dataset and its append-only acquisition history      |
+| `GET /api/v1/datasets/{name}/bars` | One cursor page of stored bars, tagged with its version |
+
+The three dataset routes are `GET`-only and unauthenticated by design
+(`docs/architecture/backend.md` §4 and §6): they expose public market data
+and where it came from, not an account, a session, a strategy, a position
+or an order. The loopback bind and the CORS allow-list are what keep them
+local. A timestamp with no UTC offset and an inverted window are refused
+with `422`; an unknown name is `404`; a manifest row whose artefact cannot
+be read is `409`, never a shorter series than the manifest claims.
 
 `/ready` performs a real round trip to PostgreSQL and reports `database: ok`
 or `database: failed`; a failed check answers `503`. `not_configured` is no
@@ -102,7 +113,10 @@ defect.
   cross-check have no implementation either, and the full validation
   report of a *successful* run is not persisted — only the status,
   reasons and notes on the manifest row.
-- Market terminal and charts — Phase 4
+- Market terminal **UI** — Phase 4, in progress. The read-only dataset API
+  exists (directory, provenance, stored bars); no chart, no watchlist, no
+  multi-timeframe view and no dataset browser page has been built, so
+  nothing in `apps/web` renders a market number yet.
 - Quant / feature engine — Phase 5
 - Backtesting engine — Phase 6
 - Strategy validation and walk-forward testing — Phase 7
@@ -192,6 +206,13 @@ prints actual results.
    written to disk — only the status, reasons and notes on the manifest
    row. The ROADMAP's own Phase 3 exit criteria are met; these two are
    recorded here rather than rounded up.
+8. **The dataset read endpoints are served without authentication.** This
+   is the §6 rule applied deliberately — market data and its provenance
+   name no account — not a control that failed. What stands behind it
+   today is the `127.0.0.1` bind, the CORS allow-list and `GET`-only
+   routes. The condition under which it must be revisited is publishing
+   research data beyond loopback; `docs/architecture/backend.md` §4
+   records that authentication would be the first change.
 
 ---
 
@@ -222,10 +243,41 @@ never silently repaired or invented**. The live check is opt-in
 (`HQOS_LIVE_PROVIDER_TESTS=1`) and skips — visibly, as a skip — when it
 is not asked for.
 
-Not started: Phase 4 (Market terminal). Phase 3 stops here. Beginning
-the next phase is a boundary that needs the human's instruction, exactly
-as Phase 2's did.
+Not started as of Phase 3's close: Phase 4. Phase 3 stopped there, and the
+next phase began only on the human's instruction, exactly as Phase 2's did.
 
-Carried forward, none of it Phase 3: nightly backup scheduling and where
+**Phase 4 (Market terminal) is in progress.** Increment 1 — the read-only
+dataset API — is delivered and observed on 2026-09-29 against the
+repository at the commit being documented:
+
+- `GET /api/v1/datasets`, `GET /api/v1/datasets/{name}` and
+  `GET /api/v1/datasets/{name}/bars` over a real uvicorn process and the
+  real PostgreSQL test database, reading a store written by
+  `store_batch` and registered by `register_dataset`;
+- the directory answer carried the observed dataset's version, its
+  `suspect` quality status, its source and its row count; the detail
+  answer carried the acquisition history newest first with the SHA-256
+  checksum; the bars answer returned `78563.0` and `30.04552452`
+  digit for digit, `limit=1` paging through the cursor without overlap,
+  and an empty window answering `returned: 0` rather than an error;
+- refusals observed with their statuses: unknown name `404`, artefact
+  removed from `data/` `409`, timestamp without an offset `422`,
+  inverted window `422`, and a dataset name containing a separator
+  reachable both raw and percent-encoded;
+- the same contracts mirrored in TypeScript and checked against one
+  shared fixture (`tests/contracts/datasets.json`) in both directions;
+- battery: `pytest` 297 passed + 1 skipped (the opt-in live provider
+  test, visible as a skip), `ruff check` clean, `ruff format --check`
+  clean over 140 files, `mypy` clean over 95 files, prettier, eslint and
+  `tsc` clean, vitest 87 passed.
+
+The ROADMAP's Phase 4 exit criterion — every number on screen traceable
+to a dataset version — **cannot be assessed yet**: no screen exists. It
+is recorded as unassessed rather than met. What remains of Phase 4, in
+order: the `/datasets` browser page with provenance and quality status,
+a chart of the stored bars with the dataset version on screen, then
+watchlists and multi-timeframe views. Phase 4 stops at its boundary.
+
+Carried forward, none of it Phase 4: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and
 the human-supplied `local_agent_token`.

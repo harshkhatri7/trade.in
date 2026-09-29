@@ -7,6 +7,7 @@
  */
 
 export * from './auth';
+export * from './datasets';
 export * from './system';
 
 /** Execution modes, least to most dangerous. Live is unreachable in Phase 0-15. */

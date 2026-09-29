@@ -53,9 +53,12 @@ from harsh_quant_os.data.providers import Bar
 from harsh_quant_os.data.validation import ValidationReport
 
 __all__ = [
+    "DEFAULT_STORE_ROOT",
     "QuarantineRecord",
+    "StorePathEscapes",
     "StoreRefused",
     "StoredDataset",
+    "artifact_path",
     "quarantine_batch",
     "read_bars",
     "store_batch",
@@ -68,6 +71,37 @@ _FIELDS = ("symbol", "timeframe", "timestamp", "open", "high", "low", "close", "
 #: resolve outside the store, and testing that is cheaper than reasoning
 #: about it.
 _UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+#: Where the store lives when a caller does not name a root: relative to
+#: the working directory, which every entry point in this repository runs
+#: from the repository root. One definition, shared by the CLI and the API,
+#: so the two cannot drift into writing and reading different directories.
+DEFAULT_STORE_ROOT = Path("data")
+
+
+class StorePathEscapes(ValueError):
+    """A manifest ``storage_path`` resolved outside the store.
+
+    Written only by :func:`store_batch`, so this is unreachable unless the
+    manifest row was edited by hand or corrupted. It is checked anyway: a
+    path that escapes is a file outside ``data/``, and the cost of being
+    wrong about that is higher than the cost of the check.
+    """
+
+
+def artifact_path(root: Path, storage_path: str) -> Path:
+    """Resolve a manifest's ``storage_path`` beneath ``root``.
+
+    Raises :class:`StorePathEscapes` rather than returning a path that
+    points anywhere else.
+    """
+    resolved_root = root.resolve()
+    candidate = (root / storage_path).resolve()
+    if candidate == resolved_root or not candidate.is_relative_to(resolved_root):
+        raise StorePathEscapes(
+            f"storage_path {storage_path!r} resolves outside the store {resolved_root}"
+        )
+    return candidate
 
 
 class StoreRefused(Exception):

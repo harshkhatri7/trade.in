@@ -33,6 +33,7 @@ from harsh_quant_os.auth.errors import DatabaseUnavailable, DuplicateUser, Passw
 from harsh_quant_os.config import Settings, SettingsError
 from harsh_quant_os.contracts.provenance import DataQualityStatus, Timeframe
 from harsh_quant_os.data import (
+    DEFAULT_STORE_ROOT,
     BarRequest,
     KrakenProvider,
     MarketDataError,
@@ -177,8 +178,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ingest.add_argument(
         "--store",
-        default="data",
-        help="Directory to write the dataset into (default: data).",
+        default=str(DEFAULT_STORE_ROOT),
+        help=f"Directory to write the dataset into (default: {DEFAULT_STORE_ROOT}).",
     )
     return parser
 

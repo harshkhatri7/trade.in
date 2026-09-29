@@ -36,9 +36,12 @@ from harsh_quant_os.data.providers import (
     MarketDataProvider,
 )
 from harsh_quant_os.data.store import (
+    DEFAULT_STORE_ROOT,
     QuarantineRecord,
+    StorePathEscapes,
     StoredDataset,
     StoreRefused,
+    artifact_path,
     quarantine_batch,
     read_bars,
     store_batch,
@@ -52,6 +55,7 @@ from harsh_quant_os.data.validation import (
 )
 
 __all__ = [
+    "DEFAULT_STORE_ROOT",
     "AuthenticationFailed",
     "Bar",
     "BarRequest",
@@ -66,11 +70,13 @@ __all__ = [
     "ProviderUnavailable",
     "QuarantineRecord",
     "RateLimited",
+    "StorePathEscapes",
     "StoreRefused",
     "StoredDataset",
     "UnsupportedRange",
     "UrllibTransport",
     "ValidationReport",
+    "artifact_path",
     "parse_rows",
     "quarantine_batch",
     "read_bars",
