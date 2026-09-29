@@ -25,6 +25,20 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
   received counts, so a short answer cannot be mistaken for a complete
   one), `UnsupportedRange`, `ProviderUnavailable` and
   `InvalidProviderPayload`, all catchable through `MarketDataError`.
+- **The validation pipeline** `harsh_quant_os.data.validation` — five of
+  the seven checks in `data-platform.md` section 3, and an honest note in
+  the report for the two that have no implementation yet. `parse_rows`
+  quarantines the whole batch on the first malformed row rather than
+  dropping the rows around it, naming the field without echoing the value
+  (this message goes into a log). `validate_bars` counts duplicates —
+  flagging separately those whose values disagreed with the bar kept, and
+  making the batch `suspect` when they did — records gaps as explicit
+  intervals with the count of bars that were missing, rejects
+  out-of-order timestamps with a reason instead of sorting them, and
+  flags outliers by modified z-score while leaving them exactly as they
+  arrived. Nothing is reordered, filled, clamped or otherwise repaired,
+  and tests pin each of those absences rather than only pinning the
+  behaviour that is present.
 - **A test that fails the build if anything under `src/` imports a vendor
   SDK.** Provider independence is the sort of rule that erodes one
   convenient import at a time; parsing every file turns it into something
@@ -32,9 +46,10 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 #### Not yet delivered
 
-Provider adapters, ingestion, the validation pipeline, quality status on
-stored datasets, the local dataset store and its manifest, and the
-corporate-actions, news, fundamentals and options interfaces.
+Provider adapters, ingestion, quality status on stored datasets, the local
+dataset store and its manifest, the session-calendar and second-source
+cross-checks, and the corporate-actions, news, fundamentals and options
+interfaces.
 
 ### Phase 2 — database and authentication (complete)
 

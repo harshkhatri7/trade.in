@@ -65,17 +65,30 @@ SOURCE ──► INGEST ──► VALIDATE ──► NORMALISE ──► STORE �
               └─ recorded ingested_at, source, run id
 ```
 
-Validation checks (Phase 3):
+Validation checks (Phase 3), and for each one what actually exists in
+`harsh_quant_os.data.validation`:
 
-| Check            | Failure action                                            |
-| ---------------- | --------------------------------------------------------- |
-| Schema/typing    | Quarantine the batch; never coerce silently               |
-| Timestamp order  | Reject the batch; record the reason                       |
-| Gaps             | Record explicit gap intervals in metadata                 |
-| Duplicates       | Drop with a counted, logged report                         |
-| Outliers         | Flag `suspect`; never winsorise silently                  |
-| Session/calendar | Compare against the instrument's session rules            |
-| Cross-check      | Optional second source; disagreement ⇒ `suspect`          |
+| Check            | Failure action                                            | State                          |
+| ---------------- | --------------------------------------------------------- | ------------------------------ |
+| Schema/typing    | Quarantine the batch; never coerce silently               | `parse_rows`                   |
+| Timestamp order  | Reject the batch; record the reason                       | `validate_bars` — rejected, not sorted |
+| Gaps             | Record explicit gap intervals in metadata                 | `validate_bars` — recorded, never filled |
+| Duplicates       | Drop with a counted, logged report                         | `validate_bars` — first bar at a timestamp wins; a duplicate that *disagreed* with the bar kept is counted separately and makes the batch `suspect` |
+| Outliers         | Flag `suspect`; never winsorise silently                  | `validate_bars` — modified z-score, threshold configurable, reported not adjusted |
+| Session/calendar | Compare against the instrument's session rules            | **Not implemented** — no exchange calendar exists |
+| Cross-check      | Optional second source; disagreement ⇒ `suspect`          | **Not implemented** — no second provider exists |
+
+Two caveats that the report states rather than hides:
+
+- **Outliers are not judged** on a batch shorter than the configured
+  minimum, or when every bar has the same range. Both appear in the
+  report's `notes`. A series with no variation is not evidence that it has
+  no outliers; it is a rule with nothing to measure with.
+- **Daily gaps are computed against raw one-day spacing.** Until a session
+  calendar exists, weekends and holidays appear as gaps. That is a true
+  statement about what arrived, and the report says so instead of
+  pretending the calendar was known. Gaps never change a batch's quality
+  status by themselves.
 
 ---
 
@@ -125,11 +138,20 @@ Implemented and tested:
   schema is closed and frozen. Failures are typed, and a `PartialData`
   carries both the requested and received counts so a short answer cannot
   be mistaken for a complete one.
+- **The validation pipeline** (`harsh_quant_os.data.validation`) — five of
+  the seven checks in section 3. `parse_rows` quarantines the whole batch
+  on the first malformed row and names the field without echoing the
+  value; `validate_bars` counts duplicates, records gaps as intervals,
+  rejects out-of-order timestamps with a reason instead of sorting them,
+  and flags outliers without adjusting them. It never edits a bar, never
+  fills a gap and never reorders anything, and tests pin each of those
+  absences.
 - A test that parses every file under `src/` and fails if any imports a
   vendor SDK — principle 1, made executable rather than aspirational.
 
-Not implemented: adapters, ingestion, validation runs, storage manifests,
-and the four interfaces in section 2 without an implementation.
+Not implemented: adapters, ingestion, storage manifests, the session
+calendar and second-source cross-check, and the four interfaces in
+section 2 without an implementation.
 
 ---
 
