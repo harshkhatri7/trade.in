@@ -1,8 +1,9 @@
 # Frontend architecture
 
-**Phase:** 1 — Application skeleton. **`apps/web` is implemented** as a shell:
-layout, design tokens, the typed API client and the system-status panel. The
-decisions below are the ones that produced it.
+**Phase:** 4 — Market terminal (in progress). **`apps/web`** began as the
+Phase 1 shell — layout, design tokens, the typed API client and the
+system-status panel — and Phase 4 added the `/datasets` route. The
+decisions below are the ones that produced both.
 
 ---
 
@@ -119,4 +120,43 @@ Not delivered (recorded, not hidden):
   [ADR-0003](../decisions/ADR-0003-authentication-deferred.md), which restates
   the roadmap exit criteria for this phase.
 - Routing beyond the single shell page, and generated client code — both
-  deferred with the same ADR trail as above.
+  deferred with the same ADR trail as above. Routing arrived in Phase 4
+  with `/datasets` (§7); generated client code is still not used.
+
+---
+
+## 7. Phase 4 — the dataset browser
+
+`/datasets` is the first route after the shell page, and it is split the
+same way as everything else:
+
+- `app/datasets/page.tsx` — server component: page metadata and copy only;
+- `components/dataset-browser.tsx` — renders the directory and, once a
+  dataset is selected, its provenance panel;
+- `features/datasets/use-datasets.ts` — `useDatasetList()` and
+  `useDatasetDetail()`, each a closed union of §2 rule 3, plus `idle` for
+  the detail request: nothing is fetched until the operator selects a
+  dataset, and "not started" is a different fact from "failed";
+- `features/common/api-failure.ts` — the shared classification of network,
+  HTTP and contract failures, used by the system panel and the dataset
+  panel alike so the two cannot drift apart.
+
+Traceability rules the page enforces (§3):
+
+- the directory shortens the artefact version to fit the table; the detail
+  panel always shows the full SHA-256, so a figure can name its artefact
+  exactly;
+- the directory shows the acquisition timestamp to whole seconds so the
+  table fits the viewport; the exact recorded value is carried on the
+  cell's `title` and rendered in full in the detail panel;
+- acquisition checksums are shown in full — a shortened checksum cannot be
+  verified against anything;
+- a `null` field renders as `—`, never `0`: "not recorded" and "zero rows"
+  are different facts;
+- quality status is a word plus a colour, never colour alone;
+- failure messages reach the screen unchanged: an unreachable API, an HTTP
+  status and a contract violation remain three distinguishable states.
+
+Rendering bars arrives with `lightweight-charts` in the next increment;
+`getDatasetBars()` on the typed client, with its tests, exists already, so
+the chart consumes a path that is already verified.

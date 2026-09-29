@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'HARSH QUANT OS',
   description:
-    'Private quantitative trading research platform - foundation stage. Research and analysis only; live trading is not implemented.',
+    'Private quantitative trading research platform - research and analysis only; live trading is not implemented.',
 };
 
 export const viewport: Viewport = {
@@ -24,12 +25,25 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
         </a>
 
         <header className="border-b border-line">
-          <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-5">
+          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-5">
             <span className="text-sm font-semibold tracking-[0.24em] uppercase">
-              HARSH&nbsp;QUANT&nbsp;OS
+              <Link href="/" className="hover:text-accent">
+                HARSH&nbsp;QUANT&nbsp;OS
+              </Link>
             </span>
+            <nav
+              aria-label="Primary"
+              className="flex items-center gap-5 text-xs tracking-[0.16em] text-muted uppercase"
+            >
+              <Link href="/" className="hover:text-ink">
+                Home
+              </Link>
+              <Link href="/datasets" className="hover:text-ink">
+                Datasets
+              </Link>
+            </nav>
             <span className="rounded-full border border-line px-3 py-1 text-xs tracking-[0.16em] text-muted uppercase">
-              Foundation
+              Research workspace
             </span>
           </div>
         </header>

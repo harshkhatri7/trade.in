@@ -10,8 +10,23 @@
  *    failure are three different things and the UI shows three different
  *    states - an unreachable API is never reported as healthy.
  */
-import type { HealthResponse, ReadyResponse } from '@harsh-quant-os/types';
-import { API_PATHS, parseHealthResponse, parseReadyResponse } from '@harsh-quant-os/shared';
+import type {
+  DatasetBarsResponse,
+  DatasetDetailResponse,
+  DatasetListResponse,
+  HealthResponse,
+  ReadyResponse,
+} from '@harsh-quant-os/types';
+import {
+  API_PATHS,
+  datasetBarsPath,
+  datasetPath,
+  parseDatasetBarsResponse,
+  parseDatasetDetailResponse,
+  parseDatasetListResponse,
+  parseHealthResponse,
+  parseReadyResponse,
+} from '@harsh-quant-os/shared';
 
 import { resolveApiBaseUrl } from './config';
 
@@ -46,10 +61,37 @@ export interface RequestOptions {
   readonly signal?: AbortSignal;
 }
 
+/**
+ * Query parameters accepted by `GET /api/v1/datasets/{name}/bars`.
+ *
+ * All optional: the API applies its own default limit and bounds. What is
+ * not supplied is left out of the URL entirely, so an absent parameter and
+ * a defaulted one stay the same request.
+ */
+export interface DatasetBarsQuery {
+  readonly limit?: number;
+  /** ISO-8601 instant with a UTC offset; a naive timestamp is refused with 422. */
+  readonly start?: string;
+  /** ISO-8601 instant with a UTC offset; `end <= start` is refused with 422. */
+  readonly end?: string;
+  /** `next_cursor` from a previous page. */
+  readonly cursor?: string;
+}
+
 export interface ApiClient {
   readonly baseUrl: string;
   getHealth(options?: RequestOptions): Promise<HealthResponse>;
   getReady(options?: RequestOptions): Promise<ReadyResponse>;
+  /** Every dataset with provenance, quality status and version. */
+  getDatasets(options?: RequestOptions): Promise<DatasetListResponse>;
+  /** One dataset and its append-only acquisition history. */
+  getDataset(name: string, options?: RequestOptions): Promise<DatasetDetailResponse>;
+  /** A page of stored bars, tagged with the dataset version it was read from. */
+  getDatasetBars(
+    name: string,
+    query?: DatasetBarsQuery,
+    options?: RequestOptions,
+  ): Promise<DatasetBarsResponse>;
 }
 
 export interface CreateApiClientOptions {
@@ -61,6 +103,18 @@ const defaultFetch: FetchLike = (url, init) => fetch(url, init);
 
 function trimTrailingSlashes(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
+}
+
+/** Attach a query string, omitting every parameter that was not supplied. */
+function withQuery(path: string, query?: DatasetBarsQuery): string {
+  if (query === undefined) {
+    return path;
+  }
+  const search = Object.entries(query)
+    .filter((entry): entry is [string, string | number] => entry[1] !== undefined)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .join('&');
+  return search.length > 0 ? `${path}?${search}` : path;
 }
 
 /** Build a client for one API base URL. */
@@ -121,6 +175,12 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
     baseUrl,
     getHealth: (requestOptions) => request(API_PATHS.health, parseHealthResponse, requestOptions),
     getReady: (requestOptions) => request(API_PATHS.ready, parseReadyResponse, requestOptions),
+    getDatasets: (requestOptions) =>
+      request(API_PATHS.datasets, parseDatasetListResponse, requestOptions),
+    getDataset: (name, requestOptions) =>
+      request(datasetPath(name), parseDatasetDetailResponse, requestOptions),
+    getDatasetBars: (name, query, requestOptions) =>
+      request(withQuery(datasetBarsPath(name), query), parseDatasetBarsResponse, requestOptions),
   };
 }
 

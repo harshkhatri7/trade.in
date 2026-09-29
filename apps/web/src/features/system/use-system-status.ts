@@ -12,7 +12,8 @@ import { useEffect, useState } from 'react';
 
 import type { HealthResponse } from '@harsh-quant-os/types';
 
-import { ApiClientError, type ApiClient } from '../../api-client';
+import type { ApiClient } from '../../api-client';
+import { classifyApiFailure } from '../common/api-failure';
 
 export type SystemStatusState =
   | { readonly kind: 'loading' }
@@ -20,15 +21,15 @@ export type SystemStatusState =
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'unavailable'; readonly message: string };
 
-/** Map a client failure onto the state the UI should render. */
+/**
+ * Map a client failure onto the state the UI should render.
+ *
+ * The classification itself is shared with every other feature in
+ * `features/common/api-failure.ts`, so an unreachable API and an unusable
+ * answer stay distinguishable the same way everywhere.
+ */
 export function classifyError(error: unknown): SystemStatusState {
-  if (error instanceof ApiClientError && error.kind === 'network') {
-    return { kind: 'unavailable', message: error.message };
-  }
-  if (error instanceof ApiClientError) {
-    return { kind: 'error', message: error.message };
-  }
-  return { kind: 'error', message: 'Unexpected failure while contacting the API.' };
+  return classifyApiFailure(error);
 }
 
 /** Load `/health` once on mount and track the connection state. */

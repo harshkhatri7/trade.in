@@ -40,7 +40,7 @@ chart, no strategy, no signal, no backtest engine and no trading.
 | Safety gates     | Implemented and tested               |
 | Database         | PostgreSQL + Alembic (Phase 2)       |
 | Market data      | Adapter, validation, store, manifest (Phase 3) |
-| Market terminal  | Read-only dataset API; no chart or watchlist yet (Phase 4) |
+| Market terminal  | Dataset browser page + read-only API; no chart or watchlist yet (Phase 4) |
 | Quant engine     | Not implemented (Phase 5)            |
 | Backtesting      | Not implemented (Phase 6)            |
 | Paper trading    | Not implemented (Phase 10)           |

@@ -30,10 +30,10 @@
 | Backup and restore          | `harsh_quant_os.db.backup` — binary COPY with the schema revision in the manifest; round trip proved by a test |
 | Authentication              | `AuthService`: Argon2id, sessions in PostgreSQL, `hqos_session` cookie |
 | Audit log                   | Append-only by trigger and `CHECK` constraint; every login outcome recorded |
-| Web application             | `apps/web` — Next.js 16 + React 19 + Tailwind 4 shell         |
+| Web application             | `apps/web` — Next.js 16 + React 19 + Tailwind 4: home page with system status, `/datasets` browser with provenance         |
 | API service                 | `apps/api` — FastAPI: health, readiness, login, logout, `/me`, and read-only dataset reads (directory, detail, stored bars)  |
 | API client                  | Typed client in `apps/web/src/api-client` with explicit loading / connected / error / unavailable states |
-| Shared contract             | Python models, TypeScript mirrors and fixtures, checked in both directions (system status and auth context) |
+| Shared contract             | Python models, TypeScript mirrors and fixtures, checked in both directions (system status, auth context and dataset reads) |
 | Configuration               | Typed `Settings` with safety validation (single source for env) |
 | Safety gates                | Implemented and covered by tests                             |
 | Data contracts              | Provenance record, job contract, memory categories, system status |
@@ -114,9 +114,9 @@ defect.
   report of a *successful* run is not persisted — only the status,
   reasons and notes on the manifest row.
 - Market terminal **UI** — Phase 4, in progress. The read-only dataset API
-  exists (directory, provenance, stored bars); no chart, no watchlist, no
-  multi-timeframe view and no dataset browser page has been built, so
-  nothing in `apps/web` renders a market number yet.
+  and the `/datasets` browser page (directory, quality status, provenance
+  panel) exist; no chart, no watchlist and no multi-timeframe view has
+  been built, so no bar series is rendered anywhere yet.
 - Quant / feature engine — Phase 5
 - Backtesting engine — Phase 6
 - Strategy validation and walk-forward testing — Phase 7
@@ -271,12 +271,42 @@ repository at the commit being documented:
   clean over 140 files, `mypy` clean over 95 files, prettier, eslint and
   `tsc` clean, vitest 87 passed.
 
+**Increment 2 — the `/datasets` browser page — is delivered and observed**
+on 2026-09-29 with the repository at this commit:
+
+- `apps/web/src/app/datasets/page.tsx` plus
+  `components/dataset-browser.tsx`: a directory table (instrument,
+  timeframe, quality status, row count, shortened version, acquisition
+  time) and, on selection, a provenance panel showing the full SHA-256,
+  storage path and the append-only acquisition history — including the
+  outlier note validation recorded, shown as written;
+- typed client methods `getDatasets`, `getDataset` and `getDatasetBars`
+  over the same parsers Python asserts: the dataset name is encoded as
+  one path component (a name containing `/` round-trips), and only the
+  bars parameters actually supplied are written into the query string;
+- four request states on both panels — loading / connected / error /
+  unavailable, plus `idle` before any selection — rendered from the shared
+  fixture `tests/contracts/datasets.json`, which carries real recorded
+  metadata rather than invented samples;
+- a `null` field renders as `—`, never `0`; the full version is on screen
+  beside the detail panel's figures; failure messages reach the screen
+  unchanged; `npm run build:web` produced a production build of both
+  routes;
+- battery after the change: `pytest` 297 passed + 1 skipped, `ruff check`
+  clean, `ruff format --check` clean (140 files), `mypy` clean (95
+  files), prettier, eslint and `tsc` clean, vitest **103 passed** (was 87
+  — +7 client tests, +9 component tests).
+
 The ROADMAP's Phase 4 exit criterion — every number on screen traceable
-to a dataset version — **cannot be assessed yet**: no screen exists. It
-is recorded as unassessed rather than met. What remains of Phase 4, in
-order: the `/datasets` browser page with provenance and quality status,
-a chart of the stored bars with the dataset version on screen, then
-watchlists and multi-timeframe views. Phase 4 stops at its boundary.
+to a dataset version — is satisfied **by construction on the screens that
+exist**: each figure renders beside the artefact version it was read
+from, and the full SHA-256 is on screen in the detail panel. The
+criterion as a whole is nevertheless **recorded as unassessed**, not met:
+the chart, watchlist and multi-timeframe views it speaks of do not exist,
+and a phase exit criterion is not judged on partial evidence. What
+remains of Phase 4, in order: a chart of the stored bars with the dataset
+version on screen, then watchlists and multi-timeframe views. Phase 4
+stops at its boundary.
 
 Carried forward, none of it Phase 4: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and

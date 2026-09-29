@@ -25,10 +25,14 @@ const HEALTH: HealthResponse = {
 };
 
 function clientWith(getHealth: ApiClient['getHealth']): ApiClient {
+  const unused = () => Promise.reject(new Error('not used in this test'));
   return {
     baseUrl: BASE_URL,
     getHealth,
-    getReady: () => Promise.reject(new Error('not used in this test')),
+    getReady: unused,
+    getDatasets: unused,
+    getDataset: unused,
+    getDatasetBars: unused,
   };
 }
 
