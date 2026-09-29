@@ -41,7 +41,7 @@
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
 | CI                          | GitHub Actions: TypeScript, Python, integration (with a PostgreSQL service and `HQOS_REQUIRE_POSTGRES=1`), repository policy |
-| Local environment scripts   | setup, environment provisioning, health check, validation, dev launcher, database helpers (start, migrate, reset) |
+| Local environment scripts   | setup, environment provisioning, health check, validation, dev launcher, database helpers (start, migrate, reset, backup, restore) |
 
 ### Running it
 
@@ -50,7 +50,13 @@ npm run dev        # API + web, ports read from .env
 npm run check      # format:check + lint + typecheck + vitest + pytest
 npm run health     # environment health report (real results only)
 npm run db:migrate # apply Alembic migrations (redacted output)
+
+hqos db backup  --output data/backups/2026-09-29 # every table, one transaction
+hqos db restore --source data/backups/2026-09-29 # refuses a populated target
 ```
+
+`data/` is ignored by Git in its entirety, so a backup written beneath it is
+never committed.
 
 ### Endpoints that exist
 

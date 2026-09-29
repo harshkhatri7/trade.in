@@ -16,14 +16,27 @@ import asyncio
 import getpass
 import platform
 import shutil
+import socket
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from datetime import timedelta
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from harsh_quant_os.auth import AuthService
 from harsh_quant_os.auth.errors import DatabaseUnavailable, DuplicateUser, PasswordPolicyError
 from harsh_quant_os.config import Settings, SettingsError
-from harsh_quant_os.db import build_engine, build_session_factory, dispose_engine
+from harsh_quant_os.db import (
+    BackupError,
+    BackupManifest,
+    build_engine,
+    build_session_factory,
+    dispose_engine,
+    export_database,
+    import_database,
+)
 from harsh_quant_os.db.models import User
 from harsh_quant_os.safety import resolve_trading_mode
 from harsh_quant_os.version import DISPLAY_VERSION, PROJECT_NAME, __version__
@@ -68,6 +81,34 @@ def _build_parser() -> argparse.ArgumentParser:
         "--password-stdin",
         action="store_true",
         help="Read the password from standard input instead of prompting for it.",
+    )
+
+    database = subparsers.add_parser(
+        "db",
+        help="Back up and restore the metadata database.",
+    )
+    database_commands = database.add_subparsers(dest="db_command", required=True)
+
+    backup = database_commands.add_parser(
+        "backup",
+        help="Write every table to a directory, then report what was written.",
+    )
+    backup.add_argument("--output", required=True, help="Directory to write the backup into.")
+    backup.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace a backup already present in that directory.",
+    )
+
+    restore = database_commands.add_parser(
+        "restore",
+        help="Load a backup into the configured database.",
+    )
+    restore.add_argument("--source", required=True, help="Directory holding the backup.")
+    restore.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help="Discard rows already in the target database.",
     )
     return parser
 
@@ -133,14 +174,22 @@ def _read_password(password_stdin: bool) -> str:
     return first
 
 
-def _create_user(args: argparse.Namespace) -> int:
-    """Create one account and report only what was observed being created."""
-    settings = _load_settings()
+def _require_database(settings: Settings) -> None:
+    """Refuse to touch a database whose password is still a template value.
 
+    Shared by every command that opens a connection, so a fresh checkout
+    fails the same way whichever one it was.
+    """
     if settings.is_placeholder("database_password"):
         raise _CliError(
             "DATABASE_PASSWORD still holds a placeholder value; run `npm run env:provision` first"
         )
+
+
+def _create_user(args: argparse.Namespace) -> int:
+    """Create one account and report only what was observed being created."""
+    settings = _load_settings()
+    _require_database(settings)
 
     password = _read_password(args.password_stdin)
 
@@ -187,6 +236,93 @@ def _create_user(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_database_command(
+    operation: Callable[[], Coroutine[Any, Any, BackupManifest]], action: str
+) -> BackupManifest:
+    """Run one database operation, turning failures into printable errors.
+
+    Three failure classes are worth distinguishing, and none of them may
+    show the exception's own text: SQLAlchemy and asyncpg both put the
+    connection string into some of their messages, and the connection string
+    carries the password.
+
+    * A refused socket or a SQL error means the *database* refused. It is
+      reported by type, with where to look, exactly as ``user create`` does -
+      so the two commands read the same way.
+    * ``OSError`` that is not a connection problem means the *destination*
+      did, which is a different fix and must not be blamed on the server.
+    * A :class:`BackupError` is safe verbatim: those messages contain table
+      names, revisions and directory paths, and never a URL.
+    """
+    try:
+        return asyncio.run(operation())
+    except BackupError as exc:
+        raise _CliError(str(exc)) from None
+    except (ConnectionError, TimeoutError, socket.gaierror) as exc:
+        raise _CliError(
+            f"could not {action}: the database did not accept the connection "
+            f"(error type: {type(exc).__name__}); is it running? see `npm run db:start`"
+        ) from None
+    except SQLAlchemyError as exc:
+        raise _CliError(
+            f"could not {action}: the database rejected the operation "
+            f"(error type: {type(exc).__name__})"
+        ) from None
+    except OSError as exc:
+        raise _CliError(
+            f"could not {action}: an I/O operation failed "
+            f"(error type: {type(exc).__name__}); check that the destination "
+            "directory exists and is writable"
+        ) from None
+
+
+def _report(verb: str, location: Path, manifest: BackupManifest) -> str:
+    """A one-screen summary of what was just observed, and nothing else."""
+    lines = [
+        verb,
+        f"  location       : {location.resolve()}",
+        f"  schema         : {manifest.schema_revision or '(un-migrated)'}",
+        f"  tables         : {len(manifest.tables)}",
+        f"  rows           : {manifest.total_rows}",
+    ]
+    lines.extend(f"    {entry.name:<20} {entry.rows:>10} rows" for entry in manifest.tables)
+    return "\n".join(lines)
+
+
+def _backup(args: argparse.Namespace) -> int:
+    """Write a backup, then report what was actually written."""
+    settings = _load_settings()
+    _require_database(settings)
+
+    async def _run() -> BackupManifest:
+        engine = build_engine(settings.database_url)
+        try:
+            return await export_database(engine, args.output, overwrite=args.overwrite)
+        finally:
+            await dispose_engine(engine)
+
+    print(_report("backup written", Path(args.output), _run_database_command(_run, "back up")))
+    return 0
+
+
+def _restore(args: argparse.Namespace) -> int:
+    """Load a backup, then report what was actually loaded."""
+    settings = _load_settings()
+    _require_database(settings)
+
+    async def _run() -> BackupManifest:
+        engine = build_engine(settings.database_url)
+        try:
+            return await import_database(
+                engine, args.source, replace_existing=args.replace_existing
+            )
+        finally:
+            await dispose_engine(engine)
+
+    print(_report("restore complete", Path(args.source), _run_database_command(_run, "restore")))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return a process exit code."""
     args = _build_parser().parse_args(list(argv) if argv is not None else None)
@@ -205,6 +341,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         try:
             return _create_user(args)
+        except _CliError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    if args.command == "db":
+        if args.db_command not in {"backup", "restore"}:
+            print(f"Unknown command: db {args.db_command}", file=sys.stderr)
+            return 2
+        handler = _backup if args.db_command == "backup" else _restore
+        try:
+            return handler(args)
         except _CliError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

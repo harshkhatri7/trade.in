@@ -119,7 +119,11 @@ revision, refuses to truncate data unless it is asked to, and re-aims the
 identity sequences afterwards so the first insert after a restore does not
 collide with a restored row. `tests/integration/test_backup_restore.py` runs
 the whole path — export, rebuild from empty, restore, compare every row — on
-`harsh_quant_os_backup_probe`.
+`harsh_quant_os_backup_probe`. The commands an operator types are
+`hqos db backup --output <directory>` and
+`hqos db restore --source <directory> [--replace-existing]`, both driven
+through the same module and both refusing to print anything derived from a
+connection string.
 
 It is a logical backup of **rows**, not a `pg_dump`: roles, permissions,
 extensions and DDL are not captured, because migrations rebuild DDL. That is

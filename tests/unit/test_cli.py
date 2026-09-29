@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -215,3 +216,85 @@ def test_create_refuses_a_still_placeholder_database_password(
     assert "placeholder" in err
     assert "env:provision" in err
     assert TEST_PASSWORD not in err
+
+
+@pytest.mark.unit
+def test_backup_documents_where_it_writes(capsys: pytest.CaptureFixture[str]) -> None:
+    """The operator must be able to see the flags without reading the source."""
+    with pytest.raises(SystemExit) as exit_info:
+        main(["db", "backup", "--help"])
+
+    assert exit_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "--output" in out
+    assert "--overwrite" in out
+
+
+@pytest.mark.unit
+def test_restore_documents_the_switch_that_discards_data(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The flag that destroys existing rows is the one worth spelling out."""
+    with pytest.raises(SystemExit) as exit_info:
+        main(["db", "restore", "--help"])
+
+    assert exit_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "--replace-existing" in out
+    assert "--source" in out
+
+
+@pytest.mark.unit
+def test_db_without_a_subcommand_is_rejected(capsys: pytest.CaptureFixture[str]) -> None:
+    """`hqos db` alone must not guess at whether to back up or to restore."""
+    with pytest.raises(SystemExit) as exit_info:
+        main(["db"])
+
+    assert exit_info.value.code == 2
+    assert "required" in capsys.readouterr().err
+
+
+@pytest.mark.security
+def test_backup_reports_a_database_it_cannot_reach_without_leaking_the_dsn(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """A refused socket is reported by type, never by the message underneath.
+
+    The underlying message is where a connection string would appear; the
+    error class is all an operator needs to know where to look.
+    """
+    _point_the_database_nowhere(monkeypatch)
+
+    destination = tmp_path / "unreachable-backup"
+    assert main(["db", "backup", "--output", str(destination)]) == 1
+
+    captured = capsys.readouterr()
+    assert "did not accept the connection" in captured.err
+    assert "npm run db:start" in captured.err
+    assert "ConnectionRefusedError" in captured.err
+
+    for name, secret in (
+        ("a connection string", "postgresql://"),
+        ("the credential in the connection string", "cli_tests"),
+        ("the password from the environment", NON_PLACEHOLDER_PASSWORD),
+    ):
+        assert secret not in captured.out + captured.err, f"output contained {name}"
+
+
+@pytest.mark.unit
+def test_restore_refuses_a_directory_that_is_not_a_backup(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """The manifest is checked before a connection is ever opened, and said so."""
+    _point_the_database_nowhere(monkeypatch)
+
+    assert main(["db", "restore", "--source", str(tmp_path / "nope")]) == 1
+
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "manifest.json" in err
+    assert "postgresql://" not in err

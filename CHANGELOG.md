@@ -42,6 +42,11 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
   different revision, into populated data, or from a directory without a
   manifest is refused rather than attempted, and identity sequences are
   re-aimed so the first insert after a restore cannot collide.
+- **`hqos db backup` and `hqos db restore`** — the runnable form of the same
+  module. Both report only what they observed (table names, row counts, the
+  schema revision); a connection failure is reported by error type, never by
+  the driver's own message, because that message embeds the connection
+  string.
 
 #### Fixed
 

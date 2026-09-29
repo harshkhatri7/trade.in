@@ -39,6 +39,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from harsh_quant_os.auth import AuthService
+from harsh_quant_os.cli import main
 from harsh_quant_os.config import Settings
 from harsh_quant_os.db import (
     AuditLog,
@@ -153,6 +154,15 @@ async def _export(url: str, destination: Path) -> BackupManifest:
         await dispose_engine(engine)
 
 
+async def _seed_only(url: str, live_settings: Settings) -> None:
+    """Populate the probe database without writing a backup."""
+    engine = build_engine(url)
+    try:
+        await _seed(engine, live_settings)
+    finally:
+        await dispose_engine(engine)
+
+
 def _snapshot(url: str) -> dict[str, list[tuple[Any, ...]]]:
     """Every row of every table, ordered so two runs compare equal.
 
@@ -249,3 +259,61 @@ def test_a_restore_refuses_a_database_it_could_silently_corrupt(
         _upgrade(url)
         with pytest.raises(BackupError, match="not empty"):
             asyncio.run(_export(url, backup_dir))
+
+
+@pytest.mark.integration
+def test_the_cli_backs_up_and_restores_through_the_probe_database(
+    require_postgres: None,
+    live_settings: Settings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The commands an operator would actually type, run for real.
+
+    A module with no way to reach it is not a script, so this drives
+    ``hqos db backup`` and ``hqos db restore`` the same way a shell would -
+    including the refusal when the target already holds data. ``DATABASE_URL``
+    is pointed at the probe database for the duration, which is the only
+    reason this test is allowed near a connection string at all: the CLI then
+    reads it from the environment exactly as it would from ``.env``.
+    """
+    _ = require_postgres
+    maintenance = maintenance_url(live_settings)
+
+    with _probe_database(live_settings) as url:
+        _upgrade(url)
+        asyncio.run(_seed_only(url, live_settings))
+        monkeypatch.setenv("DATABASE_URL", url)
+
+        backup_dir = tmp_path / "cli-backup"
+        assert main(["db", "backup", "--output", str(backup_dir)]) == 0
+        backed_up = capsys.readouterr().out
+        assert "backup written" in backed_up
+        assert "users" in backed_up, "the summary did not name a table it wrote"
+        assert (backup_dir / MANIFEST_NAME).is_file()
+
+        # Rebuild empty, then put it back through the command.
+        _recreate_probe(maintenance)
+        _upgrade(url)
+        capsys.readouterr()
+
+        assert main(["db", "restore", "--source", str(backup_dir)]) == 0
+        restored = capsys.readouterr().out
+        assert "restore complete" in restored
+        assert len(_snapshot(url)["users"]) == 1
+
+        # A second restore has to be asked to discard what it would overwrite.
+        assert main(["db", "restore", "--source", str(backup_dir)]) == 1
+        refused = capsys.readouterr()
+        assert "replace_existing" in refused.err
+
+        # Nothing either command printed may carry the credential.
+        credential = url.split("//", 1)[1].split("@", 1)[0].split(":", 1)[1]
+        for name, secret in (
+            ("the password", credential),
+            ("a connection string", "postgresql"),
+        ):
+            assert secret not in backed_up + restored + refused.out + refused.err, (
+                f"the CLI output contained {name}"
+            )
