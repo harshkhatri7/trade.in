@@ -1,8 +1,8 @@
 # Data platform architecture
 
-**Phase:** 0 — Foundation. **No ingestion exists yet (Phase 3).** The
-provider-independent contracts that ingestion will use are implemented and
-tested today.
+**Phase:** 3 — Market-data engine. The provider-independent **interfaces
+are implemented and tested**; ingestion, validation runs and the storage
+manifest are not, and section 6 says exactly where the line is.
 
 ---
 
@@ -21,7 +21,7 @@ tested today.
 
 ---
 
-## 2. Interfaces (planned)
+## 2. Interfaces
 
 ```text
 MarketDataProvider        current bars/ticks, symbols, sessions
@@ -31,6 +31,15 @@ NewsProvider              headlines and events with timestamps
 FundamentalsProvider      periodic financial statements
 OptionsProvider           chains and greeks where available
 ```
+
+**State:** `MarketDataProvider` and `HistoricalDataProvider` are
+implemented as `Protocol`s in `harsh_quant_os.data.providers`, with the
+typed failures they raise in `harsh_quant_os.data.errors`
+(`RateLimited`, `AuthenticationFailed`, `PartialData`,
+`UnsupportedRange`, `ProviderUnavailable`, `InvalidProviderPayload`).
+The other four interfaces have **no** implementation and no return model
+yet — defining those models before their consumers exist would be a guess
+with constraints attached.
 
 Each interface:
 
@@ -99,7 +108,7 @@ using the instrument's exchange calendar, never the machine's local clock.
 
 ---
 
-## 6. Current state (Phase 0)
+## 6. Current state (Phase 3, interface layer only)
 
 Implemented and tested:
 
@@ -108,9 +117,19 @@ Implemented and tested:
   (`extra="forbid"`), frozen after creation.
 - `DataQualityStatus` and `Timeframe` enums mirrored in TypeScript with a
   parity test.
+- **`harsh_quant_os.data`** — the provider-neutral `Bar` and `BarRequest`
+  models and the two protocols. `Bar` prices are `Decimal` so the stored
+  value is the value the provider sent; OHLC relationships are checked
+  where the failure can still name the bar; `volume` is `None` when
+  unreported rather than `0`; timestamps must be timezone-aware; the
+  schema is closed and frozen. Failures are typed, and a `PartialData`
+  carries both the requested and received counts so a short answer cannot
+  be mistaken for a complete one.
+- A test that parses every file under `src/` and fails if any imports a
+  vendor SDK — principle 1, made executable rather than aspirational.
 
-Not implemented: providers, adapters, ingestion, validation runs, storage
-manifests.
+Not implemented: adapters, ingestion, validation runs, storage manifests,
+and the four interfaces in section 2 without an implementation.
 
 ---
 

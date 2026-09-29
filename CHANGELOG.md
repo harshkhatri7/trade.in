@@ -10,7 +10,33 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 ## [Unreleased]
 
-### Phase 2 — database and authentication (in progress)
+### Phase 3 — market-data engine (in progress)
+
+#### Added
+
+- **Provider-neutral market-data interfaces** `src/harsh_quant_os/data/`
+  — `Bar` and `BarRequest` with `Decimal` prices (the stored value is the
+  value the provider sent), timezone-aware timestamps, OHLC relationships
+  checked where the failure can still name the bar, and a closed, frozen
+  schema. `volume` is `None` when a provider reported none, never `0`:
+  zero is a claim that nothing traded.
+- **Typed provider failures** — `RateLimited` (carrying `retry_after`),
+  `AuthenticationFailed`, `PartialData` (carrying both the requested and
+  received counts, so a short answer cannot be mistaken for a complete
+  one), `UnsupportedRange`, `ProviderUnavailable` and
+  `InvalidProviderPayload`, all catchable through `MarketDataError`.
+- **A test that fails the build if anything under `src/` imports a vendor
+  SDK.** Provider independence is the sort of rule that erodes one
+  convenient import at a time; parsing every file turns it into something
+  a red build can contradict.
+
+#### Not yet delivered
+
+Provider adapters, ingestion, the validation pipeline, quality status on
+stored datasets, the local dataset store and its manifest, and the
+corporate-actions, news, fundamentals and options interfaces.
+
+### Phase 2 — database and authentication (complete)
 
 #### Added
 

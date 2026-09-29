@@ -4,7 +4,7 @@
 | -------------------- | ---------------------------------------------- |
 | **Project**          | HARSH QUANT OS                                 |
 | **Version**          | 0.1.0-alpha                                    |
-| **Current phase**    | 2 — Database and authentication (in progress)  |
+| **Current phase**    | 3 — Market-data engine (in progress)          |
 | **Live trading**     | **DISABLED**                                   |
 | **Broker**           | **NOT CONNECTED**                              |
 | **Paper trading**    | NOT IMPLEMENTED                                |
@@ -37,6 +37,7 @@
 | Configuration               | Typed `Settings` with safety validation (single source for env) |
 | Safety gates                | Implemented and covered by tests                             |
 | Data contracts              | Provenance record, job contract, memory categories, system status |
+| Market-data interfaces      | `harsh_quant_os.data` — provider-neutral `Bar`/`BarRequest`, `HistoricalDataProvider` and `MarketDataProvider`, typed provider failures; a test fails the build if anything under `src/` imports a vendor SDK |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
@@ -85,7 +86,9 @@ defect.
 
 - Nightly scheduling of backups, and where backup output is stored off-machine
 - Rate limiting and a per-request CSRF token
-- Market-data ingestion and historical data — Phase 3
+- Market-data **adapters, ingestion, validation runs and storage
+  manifests** — Phase 3. The provider interfaces exist; nothing fetches,
+  validates or stores anything yet, and no provider has been called.
 - Market terminal and charts — Phase 4
 - Quant / feature engine — Phase 5
 - Backtesting engine — Phase 6
@@ -174,11 +177,17 @@ prints actual results.
 
 ## 6. Next step
 
-**Phase 2 ends here — stop.** AGENTS.md section 9 requires a phase to be
-validated, repaired, documented and committed before the next one starts,
-and that has been done. Phase 3 (market-data engine) is next in
-[ROADMAP.md](ROADMAP.md); it does not begin without a human saying so.
+**Phase 3 is under way, on instruction.** Phase 2 was closed, validated and
+committed; the phase-boundary stop was then lifted by the human, so Phase 3
+(Market-data engine) began with the provider-independent interface layer.
 
-Carried forward instead, none of it Phase 3: nightly backup scheduling and
-where backups live off-machine; rate limiting and a per-request CSRF token;
-and the human-supplied `local_agent_token`.
+Next, in [ROADMAP.md](ROADMAP.md) order: the validation pipeline (schema,
+timestamp ordering, gaps, duplicates, outliers), then a local dataset store
+with an explicit manifest, then one concrete provider adapter behind the
+interface. Phase 3's exit criteria — raw data lands with complete
+provenance, and invalid data is quarantined rather than silently repaired
+or invented — are **not** met yet.
+
+Carried forward, none of it Phase 3: nightly backup scheduling and where
+backups live off-machine; rate limiting and a per-request CSRF token; and
+the human-supplied `local_agent_token`.
