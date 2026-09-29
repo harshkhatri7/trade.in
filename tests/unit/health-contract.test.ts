@@ -124,6 +124,22 @@ describe('system status contract fixture', () => {
     expect(() => parseReadyResponse(broken)).toThrow(/checks\[\d+\]\.status/);
   });
 
+  it('still accepts not_configured, which Phase 2 no longer serves', () => {
+    // The database check now reports `ok` or `failed` because a round trip is
+    // performed. `not_configured` remains part of the shared vocabulary for a
+    // dependency that was never set up, so both language mirrors must keep
+    // accepting it even though nothing emits it today.
+    const ready = fixture().ready as { checks: Array<Record<string, unknown>> };
+    const legacy = {
+      ...ready,
+      checks: ready.checks.map((check) =>
+        check.name === 'database' ? { ...check, status: 'not_configured' } : check,
+      ),
+    };
+
+    expect(parseReadyResponse(legacy)).toEqual(legacy);
+  });
+
   it('rejects a non-object payload', () => {
     expect(() => parseHealthResponse('ok')).toThrow(/must be an object/);
     expect(() => parseReadyResponse(null)).toThrow(/must be an object/);

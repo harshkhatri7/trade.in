@@ -14,12 +14,12 @@
       {
         "name": "api",
         "status": "ok",
-        "detail": "application started and accepting requests"
+        "detail": "application started and accepting HTTP requests"
       },
       {
         "name": "database",
-        "status": "not_configured",
-        "detail": "PostgreSQL is not part of Phase 1; readiness does not depend on it yet"
+        "status": "ok",
+        "detail": "PostgreSQL answered a readiness round trip"
       }
     ]
   }

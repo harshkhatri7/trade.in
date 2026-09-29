@@ -14,10 +14,11 @@ Breaking changes move to ``/api/v2``; the aliases follow the current version.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Request, Response, status
 
 from harsh_quant_os.config import Settings
 from harsh_quant_os.contracts.system import HealthResponse, ReadinessStatus, ReadyResponse
+from hqos_api.dependencies import get_database_ping
 from hqos_api.services.system import build_health, build_ready
 
 READY_RESPONSES: dict[int | str, dict[str, object]] = {
@@ -47,13 +48,18 @@ def create_system_router(settings: Settings) -> APIRouter:
         responses=READY_RESPONSES,
         summary="Readiness",
         description=(
-            "Reports whether the API can serve normal requests. Returns 503 when a "
-            "required dependency has failed. In Phase 1 no database exists, so the "
-            "database check is reported as `not_configured` instead of `ok`."
+            "Reports whether the API can serve normal requests. Performs a real "
+            "round trip to PostgreSQL and returns 503 when it does not answer. "
+            "The database check reports `ok` or `failed` - never "
+            "`not_configured`, because the application now has a database and "
+            "claiming otherwise would be false."
         ),
     )
-    async def ready(response: Response) -> ReadyResponse:
-        payload = build_ready(settings)
+    async def ready(request: Request, response: Response) -> ReadyResponse:
+        # The ping lives in the HTTP layer: I/O at the edge, payload shaping
+        # in the pure builder underneath it.
+        reachable = await get_database_ping(request)()
+        payload = build_ready(settings, database_reachable=reachable)
         if payload.status is ReadinessStatus.NOT_READY:
             response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return payload

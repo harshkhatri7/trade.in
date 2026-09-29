@@ -140,3 +140,28 @@ def test_enums_expose_the_values_the_api_actually_serves() -> None:
         "staging",
         "production",
     ]
+
+
+@pytest.mark.unit
+def test_not_configured_remains_a_legal_but_unemitted_state() -> None:
+    """`not_configured` stays in the vocabulary; Phase 2 no longer uses it.
+
+    The database check now reports `ok` or `failed`, because a round trip was
+    performed. `not_configured` is kept for a dependency that genuinely has
+    not been set up, and dropping it would break both language mirrors for no
+    gain - so both sides must still accept it, even though nothing serves it.
+    """
+    ready = _fixture()["ready"]
+    checks = ready["checks"]
+    mutated = {
+        **ready,
+        "checks": [
+            {**check, "status": "not_configured"} if check["name"] == "database" else check
+            for check in checks
+        ],
+    }
+
+    validated = ReadyResponse.model_validate(mutated)
+    assert validated.model_dump(mode="json") == mutated
+    database = next(check for check in validated.checks if check.name == "database")
+    assert database.status is CheckStatus.NOT_CONFIGURED

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * End-to-end chain for Phase 1, without a browser automation stack:
+ * End-to-end chain, without a browser automation stack:
  *
  *   real FastAPI process → real HTTP → real API client → real React render
  *
@@ -11,12 +11,14 @@
  * stubbed except the absence of a browser.
  *
  * The suite skips - loudly - when Python with FastAPI is not available, which
- * is reported by Vitest rather than silently passed. The Python half of the
- * same chain lives in `tests/integration/test_api_http.py`.
+ * is reported by Vitest rather than silently passed. The readiness assertion
+ * additionally skips with a printed reason when PostgreSQL is not reachable,
+ * because it asserts a round trip that would otherwise be impossible to make.
+ * The Python half of the same chain lives in `tests/integration/test_api_http.py`.
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { createServer } from 'node:net';
+import { existsSync, readFileSync } from 'node:fs';
+import { connect, createServer } from 'node:net';
 import { resolve } from 'node:path';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -85,6 +87,65 @@ if (apiPython === null) {
     '[api-web-flow] SKIPPED: no Python interpreter with fastapi+uvicorn found ' +
       '(install the project with `pip install -e ".[dev]"`, or set HQOS_PYTHON).',
   );
+}
+
+/**
+ * Where PostgreSQL is configured, without touching the password.
+ *
+ * Only `DATABASE_HOST` and `DATABASE_PORT` are read out of `.env`; the rest
+ * of the file is ignored and never printed, because it holds the credential.
+ */
+function databaseEndpoint(): { host: string; port: number } {
+  let host = '127.0.0.1';
+  let port = 5432;
+
+  const envPath = resolve(REPO_ROOT, '.env');
+  if (existsSync(envPath)) {
+    for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const entry = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+      if (entry === null) continue;
+      const value = (entry[2] ?? '').trim().replace(/^["']|["']$/g, '');
+      if (entry[1]?.toUpperCase() === 'DATABASE_HOST' && value !== '') host = value;
+      if (entry[1]?.toUpperCase() === 'DATABASE_PORT' && /^\d+$/.test(value)) {
+        port = Number(value);
+      }
+    }
+  }
+  if (process.env.DATABASE_HOST) host = process.env.DATABASE_HOST;
+  if (process.env.DATABASE_PORT && /^\d+$/.test(process.env.DATABASE_PORT)) {
+    port = Number(process.env.DATABASE_PORT);
+  }
+  return { host, port };
+}
+
+/** Does anything accept a TCP connection there right now? */
+function isListening(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
+  return new Promise<boolean>((settle) => {
+    const socket = connect({ host, port });
+    let settled = false;
+    const finish = (reachable: boolean): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      settle(reachable);
+    };
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+    socket.setTimeout(timeoutMs, () => finish(false));
+  });
+}
+
+const { host: databaseHost, port: databasePort } = databaseEndpoint();
+const databaseListening = (await isListening(databaseHost, databasePort)) === true;
+
+if (!databaseListening) {
+  const reason =
+    `PostgreSQL is not listening on ${databaseHost}:${databasePort}; ` +
+    'the readiness assertion needs a real round trip to pass.';
+  if (process.env.HQOS_REQUIRE_POSTGRES === '1') {
+    throw new Error(`[api-web-flow] ${reason} (HQOS_REQUIRE_POSTGRES=1 forbids skipping)`);
+  }
+  console.warn(`[api-web-flow] SKIPPED readiness assertion: ${reason}`);
 }
 
 function freePort(): Promise<number> {
@@ -224,16 +285,46 @@ describeApiFlow('API → API client → DOM', () => {
     expect(screen.getByText(baseUrl)).toBeTruthy();
   }, 60_000);
 
-  it('serves readiness without claiming a database it does not have', async () => {
+  it.skipIf(!databaseListening)(
+    'serves readiness backed by a database that really answered',
+    async () => {
+      const ready = await fetch(`${baseUrl}${API_PATHS.ready}`);
+      const payload = (await ready.json()) as {
+        status: string;
+        checks: Array<{ name: string; status: string; detail: string }>;
+      };
+
+      expect(ready.status).toBe(200);
+      expect(payload.status).toBe('ready');
+      const database = payload.checks.find((check) => check.name === 'database');
+      expect(database?.status).toBe('ok');
+      expect(database?.detail).toBe('PostgreSQL answered a readiness round trip');
+    },
+    30_000,
+  );
+
+  it('never reports a database state it did not earn', async () => {
     const ready = await fetch(`${baseUrl}${API_PATHS.ready}`);
     const payload = (await ready.json()) as {
       status: string;
       checks: Array<{ name: string; status: string }>;
     };
-
-    expect(ready.status).toBe(200);
-    expect(payload.status).toBe('ready');
     const database = payload.checks.find((check) => check.name === 'database');
-    expect(database?.status).toBe('not_configured');
+
+    // `not_configured` would say "there is no database to probe". Phase 2 has
+    // one, so the only honest answers are the two a round trip can produce.
+    expect(database).toBeDefined();
+    expect(['ok', 'failed']).toContain(database?.status);
+
+    // The status code and the check must never disagree: a 200 whose database
+    // check failed, or a 503 whose checks all passed, would both be a lie.
+    if (ready.status === 200) {
+      expect(payload.status).toBe('ready');
+      expect(database?.status).toBe('ok');
+    } else {
+      expect(ready.status).toBe(503);
+      expect(payload.status).toBe('not_ready');
+      expect(database?.status).toBe('failed');
+    }
   }, 30_000);
 });

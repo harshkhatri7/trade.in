@@ -36,12 +36,14 @@ def build_health(settings: Settings) -> HealthResponse:
     )
 
 
-def build_readiness_checks() -> list[ReadinessCheck]:
+def build_readiness_checks(*, database_reachable: bool) -> list[ReadinessCheck]:
     """Every dependency readiness depends on, with an honest state.
 
-    Phase 1 has exactly one dependency - the process itself. The database is
-    listed as ``not_configured`` rather than omitted or reported healthy, so
-    that a caller can see what has *not* been verified.
+    Two dependencies now exist. ``database`` reports what a round trip
+    actually returned: ``ok`` when PostgreSQL answered, ``failed`` when it did
+    not. It is never reported as healthy because a connection *should* work,
+    and ``not_configured`` is no longer produced - the application now has a
+    database, so claiming it is not part of readiness would be false.
     """
     return [
         ReadinessCheck(
@@ -51,18 +53,24 @@ def build_readiness_checks() -> list[ReadinessCheck]:
         ),
         ReadinessCheck(
             name=DATABASE_CHECK,
-            status=CheckStatus.NOT_CONFIGURED,
+            status=CheckStatus.OK if database_reachable else CheckStatus.FAILED,
             detail=(
-                "not part of Phase 1; PostgreSQL arrives in Phase 2, "
-                "so readiness does not depend on it"
+                "PostgreSQL answered a readiness round trip"
+                if database_reachable
+                else "PostgreSQL did not answer a readiness round trip"
             ),
         ),
     ]
 
 
-def build_ready(settings: Settings) -> ReadyResponse:
-    """Readiness payload: ``ready`` only when no required check has failed."""
-    checks = build_readiness_checks()
+def build_ready(settings: Settings, *, database_reachable: bool) -> ReadyResponse:
+    """Readiness payload: ``ready`` only when no required check has failed.
+
+    ``database_reachable`` is an *observation* passed in by the caller, not
+    something this pure function decides - that keeps it testable without a
+    database and keeps the ping in the HTTP layer where I/O belongs.
+    """
+    checks = build_readiness_checks(database_reachable=database_reachable)
     required_ok = all(check.status is not CheckStatus.FAILED for check in checks)
     return ReadyResponse(
         status=ReadinessStatus.READY if required_ok else ReadinessStatus.NOT_READY,

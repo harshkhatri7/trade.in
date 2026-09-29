@@ -21,6 +21,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from harsh_quant_os.auth.errors import (
+    AuthError,
+    DatabaseUnavailable,
+    DuplicateUser,
+    InvalidCredentials,
+    PasswordPolicyError,
+    SessionInvalid,
+)
+
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
 logger = logging.getLogger(__name__)
@@ -91,8 +100,67 @@ def _safe_validation_errors(exc: RequestValidationError) -> list[dict[str, Any]]
     return errors
 
 
+def _auth_problem(request: Request, exc: AuthError) -> JSONResponse:
+    """Map one authentication failure onto a status code and a safe detail.
+
+    This is the *only* place the mapping exists. If each router chose its own
+    status, "what does a revoked session return?" would have a different
+    answer per endpoint, and the guarantee that every login refusal looks
+    identical would depend on nobody editing the wrong file.
+
+    The internal ``reason`` on :class:`InvalidCredentials` is logged, never
+    returned: it distinguishes "no such account" from "wrong password", and
+    that distinction handed to a caller is precisely the enumeration oracle
+    the service was written to avoid.
+    """
+    request_id = getattr(request.state, "request_id", "")
+    if isinstance(exc, DatabaseUnavailable):
+        logger.error(
+            "api.database_unavailable request_id=%s error_type=%s",
+            request_id,
+            exc.error_type,
+        )
+        status_code = 503
+        detail = "The service is temporarily unavailable. Please try again shortly."
+    elif isinstance(exc, DuplicateUser):
+        status_code = 409
+        detail = "An account with that email address already exists."
+    elif isinstance(exc, PasswordPolicyError):
+        # Only ever raised while creating a credential, and only ever about
+        # the value the caller just supplied - so it is safe to show.
+        status_code = 422
+        detail = exc.detail
+    elif isinstance(exc, InvalidCredentials):
+        logger.warning(
+            "api.login_refused request_id=%s reason=%s",
+            request_id,
+            exc.reason,
+        )
+        status_code = 401
+        detail = "Email or password is incorrect."
+    elif isinstance(exc, SessionInvalid):
+        # Missing, malformed, tampered, expired and revoked all land here on
+        # purpose: telling a caller *which* of those happened reveals the
+        # state of a token they presented.
+        status_code = 401
+        detail = "A valid session is required for this request."
+    else:
+        status_code = 401
+        detail = "Authentication could not be verified."
+    return problem_response(
+        status=status_code,
+        title=_TITLE_BY_STATUS.get(status_code, "Unauthorized"),
+        detail=detail,
+        instance=request.url.path,
+    )
+
+
 def install_error_handlers(app: FastAPI) -> None:
     """Register the problem+json handlers on ``app``."""
+
+    @app.exception_handler(AuthError)
+    async def _auth_error(request: Request, exc: AuthError) -> Response:
+        return _auth_problem(request, exc)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError) -> Response:

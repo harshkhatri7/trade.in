@@ -6,6 +6,7 @@
  * tests in `tests/unit`.
  */
 
+export * from './auth';
 export * from './system';
 
 /** Execution modes, least to most dangerous. Live is unreachable in Phase 0-15. */

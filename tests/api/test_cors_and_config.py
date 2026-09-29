@@ -123,4 +123,8 @@ def test_factory_uses_the_origins_from_settings() -> None:
         m for m in app.user_middleware if getattr(m.cls, "__name__", "") == "CORSMiddleware"
     )
     assert cors.kwargs["allow_origins"] == ["http://localhost:4000", "http://127.0.0.1:4000"]
-    assert cors.kwargs["allow_methods"] == ["GET", "HEAD", "OPTIONS"]
+    # POST joins the allowlist because authentication is state-changing: a
+    # browser must be able to preflight a login. The verbs stay enumerated -
+    # no wildcard - so a future "allow everything" edit has to happen here,
+    # in front of a test that says so.
+    assert cors.kwargs["allow_methods"] == ["GET", "POST", "HEAD", "OPTIONS"]
