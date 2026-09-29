@@ -230,4 +230,26 @@ describe('api client — dataset reads', () => {
     expect(error.kind).toBe('contract');
     expect(error.cause).toBeInstanceOf(TypeError);
   });
+
+  it('rejects a bar whose timestamp does not parse, before any chart could read it', async () => {
+    const malformed = {
+      ...BARS,
+      bars: [{ ...BARS.bars[0], timestamp: 'not-a-moment' }],
+      // Internally consistent apart from the timestamp, so the cross-check
+      // for `returned` passes and the timestamp rule itself is what rejects.
+      returned: 1,
+    };
+    const client = createApiClient({
+      baseUrl: 'http://127.0.0.1:8000',
+      fetch: vi.fn(async () => jsonResponse(malformed)),
+    });
+
+    const error = (await client
+      .getDatasetBars('kraken.xbtusd.1h')
+      .catch((reason: unknown) => reason)) as ApiClientError;
+
+    expect(error.kind).toBe('contract');
+    expect(error.cause).toBeInstanceOf(TypeError);
+    expect((error.cause as TypeError).message).toContain('bars[0].timestamp');
+  });
 });

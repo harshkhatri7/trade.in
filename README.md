@@ -23,8 +23,9 @@ layout, documentation, tooling, safety gates, contracts, tests, CI), the
 a typed, tested contract), **PostgreSQL with session authentication**, and
 the **market-data engine** (a Kraken adapter, validation, a dataset store
 with provenance, and `hqos data ingest`). Phase 4, the market terminal,
-has delivered its read-only dataset API; there is still no dashboard, no
-chart, no strategy, no signal, no backtest engine and no trading.
+has delivered its read-only dataset API, the dataset browser and a
+stored-bars chart; there is still no dashboard, no strategy, no signal, no
+backtest engine and no trading.
 
 | Subsystem        | Status                               |
 | ---------------- | ------------------------------------ |
@@ -40,7 +41,7 @@ chart, no strategy, no signal, no backtest engine and no trading.
 | Safety gates     | Implemented and tested               |
 | Database         | PostgreSQL + Alembic (Phase 2)       |
 | Market data      | Adapter, validation, store, manifest (Phase 3) |
-| Market terminal  | Dataset browser page + read-only API; no chart or watchlist yet (Phase 4) |
+| Market terminal  | Dataset browser + stored-bars chart; no watchlist yet (Phase 4) |
 | Quant engine     | Not implemented (Phase 5)            |
 | Backtesting      | Not implemented (Phase 6)            |
 | Paper trading    | Not implemented (Phase 10)           |

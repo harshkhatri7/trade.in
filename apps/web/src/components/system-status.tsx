@@ -12,27 +12,13 @@ import type { HealthResponse } from '@harsh-quant-os/types';
 
 import type { ApiClient } from '../api-client';
 import { defaultApiClient } from '../api-client';
+import { REQUEST_STATE_LABELS, REQUEST_STATE_TONES } from '../features/common/request-state';
 import { useSystemStatus } from '../features/system/use-system-status';
-import type { SystemStatusState } from '../features/system/use-system-status';
 
 export interface SystemStatusProps {
   /** Injected in tests; production uses the configured default client. */
   readonly client?: ApiClient;
 }
-
-const STATUS_LABELS: Record<SystemStatusState['kind'], string> = {
-  loading: 'LOADING',
-  connected: 'CONNECTED',
-  error: 'ERROR',
-  unavailable: 'DISCONNECTED',
-};
-
-const STATUS_TONES: Record<SystemStatusState['kind'], string> = {
-  loading: 'text-muted',
-  connected: 'text-accent',
-  error: 'text-critical',
-  unavailable: 'text-warning',
-};
 
 /**
  * Copy for the two states that have no failure to report. `error` and
@@ -72,9 +58,9 @@ export function SystemStatus({ client = defaultApiClient }: SystemStatusProps) {
       <dl className="mt-6">
         <div className="flex items-baseline justify-between gap-4 border-b border-line py-3">
           <dt className="text-xs uppercase tracking-[0.18em] text-muted">API</dt>
-          <dd className={STATUS_TONES[state.kind]}>
+          <dd className={REQUEST_STATE_TONES[state.kind]}>
             <span role="status" className="font-mono text-sm font-semibold tracking-wide">
-              {STATUS_LABELS[state.kind]}
+              {REQUEST_STATE_LABELS[state.kind]}
             </span>
           </dd>
         </div>
@@ -87,7 +73,7 @@ export function SystemStatus({ client = defaultApiClient }: SystemStatusProps) {
         // The underlying failure is shown as it happened: a network error, an
         // HTTP status or a contract violation is never reduced to a generic
         // reassurance.
-        <p className={'mt-4 text-sm ' + STATUS_TONES[state.kind]} data-detail={state.kind}>
+        <p className={'mt-4 text-sm ' + REQUEST_STATE_TONES[state.kind]} data-detail={state.kind}>
           {state.message}
         </p>
       ) : (

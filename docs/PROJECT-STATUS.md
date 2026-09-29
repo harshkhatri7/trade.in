@@ -113,10 +113,10 @@ defect.
   cross-check have no implementation either, and the full validation
   report of a *successful* run is not persisted — only the status,
   reasons and notes on the manifest row.
-- Market terminal **UI** — Phase 4, in progress. The read-only dataset API
-  and the `/datasets` browser page (directory, quality status, provenance
-  panel) exist; no chart, no watchlist and no multi-timeframe view has
-  been built, so no bar series is rendered anywhere yet.
+- Market terminal **UI** — Phase 4, in progress. The read-only dataset API,
+  the `/datasets` browser page (directory, quality status, provenance
+  panel) and the stored-bars chart with its table exist; no watchlist and
+  no multi-timeframe view has been built yet.
 - Quant / feature engine — Phase 5
 - Backtesting engine — Phase 6
 - Strategy validation and walk-forward testing — Phase 7
@@ -131,9 +131,10 @@ defect.
 - Controlled live trading — Phase 16
 - Continuous optimization — Phase 17
 
-There is no dashboard, no chart, no market number, no signal, no backtest and
-no trading of any kind in the interface. The only value the web app displays
-comes from a validated `/health` response.
+There is no dashboard, no signal, no backtest and no trading of any kind
+in the interface. Every value the web app displays comes from a validated
+API response — health, dataset metadata, provenance or stored bars — and
+nothing on screen is hard-coded.
 
 ---
 
@@ -297,16 +298,56 @@ on 2026-09-29 with the repository at this commit:
   files), prettier, eslint and `tsc` clean, vitest **103 passed** (was 87
   — +7 client tests, +9 component tests).
 
+**Increment 3 — the stored-bars chart — is delivered and observed** on
+2026-09-29 with the repository at this commit:
+
+- `apps/web/src/components/dataset-bars.tsx`: a candlestick chart
+  (TradingView Lightweight Charts 5.2.1, reason recorded in
+  `docs/architecture/frontend.md` §1) of one explicit window —
+  `GET /api/v1/datasets/{name}/bars?limit=200` — inside the detail panel,
+  with the full artefact version printed above the figure, the
+  instrument/timeframe/quality metadata line, and the `has_more` note
+  stated out loud when the window is a page of a longer series;
+- chart and table read one payload: prices become numbers only for the
+  chart's geometry, while the table prints the stored decimal strings
+  verbatim (`78563.0`, `30.04552452`); a null volume renders `—`, never
+  `0`;
+- observed in a real browser against a real uvicorn process and the dev
+  database: `GET .../bars?limit=200` answered `200`, the chart painted
+  non-blank pixels on its seven canvases, the table rendered 200 rows of
+  exact strings, the full SHA-256 was on screen above the figure, the
+  page console was empty, and no element overflowed the viewport;
+  a screenshot was captured;
+- accessibility verified with axe-core on the open panel after two real
+  findings were fixed: the chart container is a labelled
+  `role="figure"` (the library renders its TradingView attribution link
+  inside, and `img` is a leaf role), and the scrollable table wrapper is
+  a named focusable region — result **0 violations, 45 checks passed**;
+  Lighthouse on `/datasets` scored accessibility, best-practices and SEO
+  **1.0 each with zero failures**;
+- the contract is the chart's guard: a bar timestamp that does not parse
+  is rejected by `parseBarPoint` before any chart could read it, asserted
+  in the client tests;
+- battery after the change: `pytest` 297 passed + 1 skipped, `ruff check`
+  clean, `ruff format --check` clean (140 files), `mypy` clean (95
+  files), prettier, eslint and `tsc` clean, vitest **109 passed** (was
+  103 — +5 bars-panel tests, +1 contract-guard test), `npm run
+  build:web` prerendered `/`, `/_not-found` and `/datasets`;
+- dependencies: `lightweight-charts@^5.2.1` and its `fancy-canvas@2.1.0`
+  transitive pinned into `apps/web/package.json`; the lockfile diff was
+  reviewed (registry.npmjs.org URLs, integrity hashes, Apache-2.0 and
+  MIT, 0 vulnerabilities).
+
 The ROADMAP's Phase 4 exit criterion — every number on screen traceable
 to a dataset version — is satisfied **by construction on the screens that
 exist**: each figure renders beside the artefact version it was read
-from, and the full SHA-256 is on screen in the detail panel. The
+from, the full SHA-256 is on screen in the detail panel, and the chart
+prints the version of the payload it draws directly above itself. The
 criterion as a whole is nevertheless **recorded as unassessed**, not met:
-the chart, watchlist and multi-timeframe views it speaks of do not exist,
-and a phase exit criterion is not judged on partial evidence. What
-remains of Phase 4, in order: a chart of the stored bars with the dataset
-version on screen, then watchlists and multi-timeframe views. Phase 4
-stops at its boundary.
+the watchlist and multi-timeframe views it speaks of do not exist, and a
+phase exit criterion is not judged on partial evidence. What remains of
+Phase 4: watchlists and multi-timeframe views. Phase 4 stops at its
+boundary.
 
 Carried forward, none of it Phase 4: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and

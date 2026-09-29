@@ -2,9 +2,9 @@
 
 **Phase 1 shell, Phase 4 pages.** A dark, minimal, accessible application
 whose only data source is the API. The home page renders connection state;
-`/datasets` renders the ingested market data with its provenance. There are
-no charts, no P&L, no positions and no trading controls in this
-application.
+`/datasets` renders the ingested market data with its provenance and charts
+the stored bars of the selected dataset. There is no P&L, no positions and
+no trading controls in this application.
 
 ---
 
@@ -18,6 +18,12 @@ application.
   status, row count, artefact version and acquisition time — and, for the
   selected dataset, the full SHA-256, storage path and the append-only
   acquisition history behind it.
+- **Stored bars**: a candlestick chart (TradingView Lightweight Charts) of
+  one window of bars from `GET /api/v1/datasets/{name}/bars`, drawn in the
+  dataset's own colours, above a table of the same payload printing every
+  price verbatim. The full artefact version sits above the figure, and when
+  the API reports more rows than the window holds the panel says so instead
+  of implying the series is complete.
 - What exists so far, and — explicitly — what it does not.
 
 `CONNECTED` is only rendered after a validated response arrives. If the API
@@ -38,10 +44,10 @@ apps/web/
 │   │   ├── config.ts       # base URL from NEXT_PUBLIC_API_BASE_URL
 │   │   └── client.ts       # typed client: health, readiness, dataset reads
 │   ├── features/
-│   │   ├── common/         # shared request-failure classification
+│   │   ├── common/         # request-failure classification, request-state labels
 │   │   ├── system/         # useSystemStatus(): loading/connected/error/unavailable
-│   │   └── datasets/       # useDatasetList()/useDatasetDetail()
-│   └── components/         # SystemStatus panel, DatasetBrowser
+│   │   └── datasets/       # useDatasetList()/useDatasetDetail()/useDatasetBars()
+│   └── components/         # SystemStatus panel, DatasetBrowser, DatasetBars chart
 ├── next.config.ts
 ├── tsconfig.json           # extends the repository root config
 └── .env.example            # NEXT_PUBLIC_API_BASE_URL
@@ -57,6 +63,9 @@ Rules this layout keeps:
    is a static label.
 4. Every figure on `/datasets` sits next to the dataset version it was read
    from; a value that was never recorded is rendered as `—`, never as zero.
+   The chart and its table read one payload, so what is drawn and what is
+   printed cannot disagree, and decimal prices become numbers only for the
+   chart's geometry — the table keeps the stored strings.
 
 ---
 
@@ -95,6 +104,7 @@ The dev server binds to `WEB_HOST`/`WEB_PORT` (`127.0.0.1:3000` by default).
 | `tests/web/api-client.test.ts` | Paths, validation and the three distinct failure kinds      |
 | `tests/web/system-status.test.tsx` | Each state renders; no state claims a connection that did not happen |
 | `tests/web/dataset-browser.test.tsx` | Each state renders from the shared fixture; nulls stay `—`, provenance loads on selection |
+| `tests/web/dataset-bars.test.tsx` | The chart is stubbed (jsdom has no canvas): it receives converted numbers while the table keeps exact strings; every request state renders |
 | `tests/integration/api-web-flow.test.tsx` | Real API → real client → real DOM                 |
 
 Run them with `npm run test`.
@@ -104,6 +114,7 @@ Run them with `npm run test`.
 ## Not implemented
 
 Authentication UI (Phase 2, see [ADR-0003](../../docs/decisions/ADR-0003-authentication-deferred.md)),
-charts, watchlists, multi-timeframe views, strategies, backtests, AI,
+watchlists, multi-timeframe views, strategies, backtests, AI,
 paper trading, live trading. Market data is shown read-only on
-`/datasets`; no charting library has been added yet.
+`/datasets`; the chart there draws one requested window of stored bars —
+it is not a live or streaming feed.

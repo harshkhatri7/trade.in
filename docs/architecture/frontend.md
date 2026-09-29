@@ -133,13 +133,21 @@ same way as everything else:
 - `app/datasets/page.tsx` — server component: page metadata and copy only;
 - `components/dataset-browser.tsx` — renders the directory and, once a
   dataset is selected, its provenance panel;
-- `features/datasets/use-datasets.ts` — `useDatasetList()` and
-  `useDatasetDetail()`, each a closed union of §2 rule 3, plus `idle` for
-  the detail request: nothing is fetched until the operator selects a
-  dataset, and "not started" is a different fact from "failed";
+- `components/dataset-bars.tsx` — the "Stored bars" section inside that
+  panel: a candlestick chart of the requested window plus a table of the
+  same payload;
+- `features/datasets/use-datasets.ts` — `useDatasetList()` once on mount,
+  and `useDatasetDetail()`/`useDatasetBars()` over one shared
+  name-keyed helper, each a closed union of §2 rule 3 plus `idle`:
+  nothing is fetched until the operator selects a dataset, and "not
+  started" is a different fact from "failed";
 - `features/common/api-failure.ts` — the shared classification of network,
   HTTP and contract failures, used by the system panel and the dataset
-  panel alike so the two cannot drift apart.
+  panel alike so the two cannot drift apart;
+- `features/common/request-state.ts` — the one place the request states
+  get their wording and colour (`LOADING`, `CONNECTED`, `ERROR`,
+  `DISCONNECTED`), so the system panel and the dataset panels cannot read
+  differently for the same state.
 
 Traceability rules the page enforces (§3):
 
@@ -157,6 +165,22 @@ Traceability rules the page enforces (§3):
 - failure messages reach the screen unchanged: an unreachable API, an HTTP
   status and a contract violation remain three distinguishable states.
 
-Rendering bars arrives with `lightweight-charts` in the next increment;
-`getDatasetBars()` on the typed client, with its tests, exists already, so
-the chart consumes a path that is already verified.
+The chart itself (`lightweight-charts`, reason recorded in §1) draws one
+explicit window — `BARS_LIMIT = 200` rows per request — and the panel says
+out loud when the API reports more rows than the window holds, so a page of
+the series is never presented as the series. Chart and table read the same
+payload: prices are decimal strings that become numbers only for the
+chart's geometry, while the table prints the stored strings verbatim
+(`78563.0`, never a rounded `78563`). The full artefact version from that
+payload sits directly above the figure, and a bar timestamp that does not
+parse can never reach the chart — `parseBarPoint` in the shared contract
+rejects it first, and the panel renders `error` instead of a chart.
+
+Accessibility of the section was verified with axe-core on the open panel:
+the chart container is a labelled `role="figure"`, not `role="img"`,
+because the charting library renders its TradingView attribution link
+inside and `img` is a leaf role; the scrollable table wrapper is a named,
+focusable region (`tabindex="0"`) so keyboard-only operators can read the
+rows below the fold. Because jsdom has no canvas, component tests stub
+`lightweight-charts` and assert the data handed to it; the rendered pixels
+are verified in a real browser.

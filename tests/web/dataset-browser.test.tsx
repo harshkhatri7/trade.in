@@ -10,16 +10,34 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
-import type { DatasetDetailResponse, DatasetListResponse } from '@harsh-quant-os/types';
+import type {
+  DatasetBarsResponse,
+  DatasetDetailResponse,
+  DatasetListResponse,
+} from '@harsh-quant-os/types';
 
 import { ApiClientError, type ApiClient } from '../../apps/web/src/api-client';
 import { DatasetBrowser } from '../../apps/web/src/components/dataset-browser';
 import fixture from '../contracts/datasets.json';
 
+// jsdom provides no canvas and no `matchMedia`, which the real chart library
+// requires; these tests exercise the browser's data flow, not chart pixels.
+// The data handed to the chart is asserted in dataset-bars.test.tsx.
+vi.mock('lightweight-charts', () => ({
+  createChart: vi.fn(() => ({
+    addSeries: vi.fn(() => ({ setData: vi.fn() })),
+    timeScale: vi.fn(() => ({ fitContent: vi.fn() })),
+    remove: vi.fn(),
+  })),
+  CandlestickSeries: Symbol('CandlestickSeries'),
+  ColorType: { Solid: 'solid' },
+}));
+
 const BASE_URL = 'http://127.0.0.1:8000';
 
 const DIRECTORY = fixture.dataset_list as DatasetListResponse;
 const DETAIL = fixture.dataset_detail as DatasetDetailResponse;
+const BARS = fixture.dataset_bars as DatasetBarsResponse;
 
 const FULL_VERSION = '0f27a08bfb355c898c0b8948da590c50dc612371599e34675f56c72ea8393883';
 
@@ -140,6 +158,7 @@ describe('<DatasetBrowser />', () => {
     const client = clientWith({
       getDatasets: () => Promise.resolve(DIRECTORY),
       getDataset,
+      getDatasetBars: () => Promise.resolve(BARS),
     });
 
     render(<DatasetBrowser client={client} />);
@@ -150,22 +169,33 @@ describe('<DatasetBrowser />', () => {
     expect(getDataset).toHaveBeenCalledWith('kraken.xbtusd.1h', expect.anything());
 
     await screen.findByText('2 acquisition record(s), newest first.');
+    // The bars panel fires with the same selection; wait for its answer so
+    // the shared-version assertion below is not a race between two requests.
+    await screen.findByText('2 bar(s) in this window.');
 
     const detail = screen.getByRole('region', { name: 'kraken.xbtusd.1h' });
     expect(detail.getAttribute('data-state')).toBe('connected');
     // The full SHA-256 is on screen: a figure can name its artefact exactly.
-    expect(within(detail).getAllByText(FULL_VERSION).length).toBeGreaterThan(0);
+    // It appears twice — beside the summary and above the chart — and both
+    // must carry the same value.
+    expect(within(detail).getAllByText(FULL_VERSION).length).toBe(2);
     expect(
       within(detail).getByText(
         '28 bar(s) flagged as outliers; values are reported as found, not adjusted',
       ),
     ).toBeTruthy();
     // The instrument is asserted inside the panel: it also appears in the
-    // directory row, and the two must not be confused for each other.
-    expect(within(detail).getByText('XBTUSD')).toBeTruthy();
+    // directory row (and now in the bars metadata line), so it is looked up
+    // in bulk here rather than mistaken for a unique match.
+    expect(within(detail).getAllByText('XBTUSD').length).toBeGreaterThanOrEqual(2);
     expect(
       screen.getByRole('button', { name: 'kraken.xbtusd.1h' }).getAttribute('aria-pressed'),
     ).toBe('true');
+    // The bars panel opened with the selection, and it is charting the same
+    // dataset version as the summary above it.
+    const bars = screen.getByRole('region', { name: 'Stored bars' });
+    expect(bars.getAttribute('data-state')).toBe('connected');
+    expect(within(bars).getAllByText(FULL_VERSION).length).toBe(1);
   });
 
   it('keeps the directory visible when one provenance request fails', async () => {
@@ -200,6 +230,7 @@ describe('<DatasetBrowser />', () => {
     const client = clientWith({
       getDatasets: () => Promise.resolve(DIRECTORY),
       getDataset: () => Promise.resolve(DETAIL),
+      getDatasetBars: () => Promise.resolve(BARS),
     });
 
     render(<DatasetBrowser client={client} />);

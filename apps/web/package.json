@@ -12,6 +12,7 @@
   "dependencies": {
     "@harsh-quant-os/shared": "0.1.0-alpha",
     "@harsh-quant-os/types": "0.1.0-alpha",
+    "lightweight-charts": "^5.2.1",
     "next": "^16.3.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

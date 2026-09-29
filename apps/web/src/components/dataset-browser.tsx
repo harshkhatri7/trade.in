@@ -6,8 +6,9 @@
  *
  * Every value on screen comes from a validated payload — the directory from
  * `GET /api/v1/datasets`, the provenance panel from
- * `GET /api/v1/datasets/{name}`. A field the API could not fill arrives as
- * `null` and renders as `—`; it is never rendered as `0`, because "not
+ * `GET /api/v1/datasets/{name}`, the bars from
+ * `GET /api/v1/datasets/{name}/bars`. A field the API could not fill arrives
+ * as `null` and renders as `—`; it is never rendered as `0`, because "not
  * counted" and "zero rows" are different facts (the same rule the Python
  * contract enforces). Quality colours are never the only signal: the status
  * word is always rendered next to them.
@@ -26,8 +27,10 @@ import type {
 
 import type { ApiClient } from '../api-client';
 import { defaultApiClient } from '../api-client';
+import { REQUEST_STATE_LABELS, REQUEST_STATE_TONES } from '../features/common/request-state';
 import { useDatasetDetail, useDatasetList } from '../features/datasets/use-datasets';
 import type { DatasetDetailState, DatasetListState } from '../features/datasets/use-datasets';
+import { DatasetBars } from './dataset-bars';
 
 export interface DatasetBrowserProps {
   /** Injected in tests; production uses the configured default client. */
@@ -36,37 +39,6 @@ export interface DatasetBrowserProps {
 
 /** What an unfilled field renders as. Deliberately not `0`. */
 const UNKNOWN = '—';
-
-const LIST_LABELS: Record<DatasetListState['kind'], string> = {
-  loading: 'LOADING',
-  connected: 'CONNECTED',
-  error: 'ERROR',
-  unavailable: 'DISCONNECTED',
-};
-
-const LIST_TONES: Record<DatasetListState['kind'], string> = {
-  loading: 'text-muted',
-  connected: 'text-accent',
-  error: 'text-critical',
-  unavailable: 'text-warning',
-};
-
-/** `idle` is transient — a selection made but not yet fetched — so it reads as loading. */
-const DETAIL_LABELS: Record<DatasetDetailState['kind'], string> = {
-  idle: 'LOADING',
-  loading: 'LOADING',
-  connected: 'CONNECTED',
-  error: 'ERROR',
-  unavailable: 'DISCONNECTED',
-};
-
-const DETAIL_TONES: Record<DatasetDetailState['kind'], string> = {
-  idle: 'text-muted',
-  loading: 'text-muted',
-  connected: 'text-accent',
-  error: 'text-critical',
-  unavailable: 'text-warning',
-};
 
 const QUALITY_TONES: Record<DataQualityStatus, string> = {
   valid: 'text-accent',
@@ -120,7 +92,7 @@ function detailNote(detail: DatasetDetailState): string {
     return detail.message;
   }
   if (detail.kind === 'connected') {
-    return `${detail.detail.provenance.length} acquisition record(s), newest first.`;
+    return `${detail.value.provenance.length} acquisition record(s), newest first.`;
   }
   return 'Waiting for the API to answer…';
 }
@@ -194,7 +166,13 @@ function ProvenanceTable({ entries }: { readonly entries: DatasetProvenanceEntry
   );
 }
 
-function DetailPanel({ detail }: { readonly detail: DatasetDetailResponse }) {
+function DetailPanel({
+  detail,
+  client,
+}: {
+  readonly detail: DatasetDetailResponse;
+  readonly client: ApiClient;
+}) {
   const dataset = detail.dataset;
 
   return (
@@ -210,6 +188,8 @@ function DetailPanel({ detail }: { readonly detail: DatasetDetailResponse }) {
         <DetailRow label="Updated (UTC)" value={dataset.updated_at} />
         <DetailRow label="Storage path" value={shown(dataset.storage_path)} />
       </dl>
+
+      <DatasetBars name={dataset.name} client={client} />
 
       <div>
         <h3 className="text-sm font-semibold uppercase tracking-[0.18em]">Acquisition history</h3>
@@ -251,9 +231,11 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
         <p className="mt-4 flex flex-wrap items-baseline gap-3 text-sm">
           <span
             role="status"
-            className={'font-mono text-sm font-semibold tracking-wide ' + LIST_TONES[list.kind]}
+            className={
+              'font-mono text-sm font-semibold tracking-wide ' + REQUEST_STATE_TONES[list.kind]
+            }
           >
-            {LIST_LABELS[list.kind]}
+            {REQUEST_STATE_LABELS[list.kind]}
           </span>
           <span className="text-muted">{listNote(list, datasets.length)}</span>
         </p>
@@ -376,15 +358,15 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
             <span
               role="status"
               className={
-                'font-mono text-sm font-semibold tracking-wide ' + DETAIL_TONES[detail.kind]
+                'font-mono text-sm font-semibold tracking-wide ' + REQUEST_STATE_TONES[detail.kind]
               }
             >
-              {DETAIL_LABELS[detail.kind]}
+              {REQUEST_STATE_LABELS[detail.kind]}
             </span>
             <span className="text-muted">{detailNote(detail)}</span>
           </p>
 
-          {detail.kind === 'connected' && <DetailPanel detail={detail.detail} />}
+          {detail.kind === 'connected' && <DetailPanel detail={detail.value} client={client} />}
         </section>
       )}
     </div>
