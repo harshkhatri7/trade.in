@@ -15,7 +15,7 @@ application with health and readiness endpoints, built on the shared
 | Pydantic v2                    | Runtime validation at every boundary                                 |
 | pydantic-settings              | Typed, single-source environment configuration                       |
 | Uvicorn                        | ASGI server suitable for FastAPI                                     |
-| PostgreSQL + SQLAlchemy + Alembic (Phase 2) | Relational integrity, reviewable migrations           |
+| PostgreSQL + SQLAlchemy + Alembic (Phase 2, delivered) | Relational integrity, reviewable migrations           |
 
 Already installed and configured in `.venv`: `fastapi`, `uvicorn`, `pydantic`,
 `pydantic-settings`, `httpx2` (the HTTP test client required by Starlette's
@@ -84,7 +84,7 @@ See [secrets management](../security/secrets-management.md).
 | Base URL           | `/api/v1/...`; `/health` and `/ready` are aliases of `/api/v1/health` and `/api/v1/ready` |
 | Errors             | RFC 7807 problem+json: `type`, `title`, `status`, `detail`        |
 | Validation         | 422 with field-level messages; never leak internals               |
-| Auth               | Session cookie (web) + short-lived bearer (machine clients) — **not implemented; moved to Phase 2 by [ADR-0003](../decisions/ADR-0003-authentication-deferred.md)** |
+| Auth               | Session cookie `hqos_session` (HttpOnly, SameSite=Lax) opened by `POST /api/v1/auth/login` and consumed by `GET /api/v1/me` and `POST /api/v1/auth/logout` — delivered in Phase 2 per [ADR-0003](../decisions/ADR-0003-authentication-deferred.md). No bearer tokens for machine clients yet |
 | Idempotency        | `Idempotency-Key` header on any write that can move a position    |
 | Pagination         | Cursor-based; explicit `has_more`                                 |
 | Time               | ISO-8601 with timezone, always UTC in storage                     |
@@ -108,11 +108,19 @@ Versioning and the shared-contract strategy are recorded in
 
 ## 6. Security posture
 
-- Deny-by-default authorisation on every route — **not yet enforced**,
-  because no authenticated surface exists; the gap and its mitigations are
-  recorded in [ADR-0003](../decisions/ADR-0003-authentication-deferred.md).
-- Rate limiting and CSRF protection arrive with authentication (Phase 2).
-- Passwords hashed with Argon2id or bcrypt (Phase 2); never reversible.
+- Authentication is required for everything that exposes or acts on an
+  account: `GET /api/v1/me` and `POST /api/v1/auth/logout` answer `401`
+  without a valid session, and there is no anonymous write path.
+  `/health` and `/ready` stay unauthenticated on purpose — a probe that
+  needs a credential cannot tell you whether the process is alive.
+- **Rate limiting and a per-request CSRF token are not implemented.**
+  Authentication landed in Phase 2; these two did not. What is in force is
+  `SameSite=Lax` on the session cookie, a `127.0.0.1` bind by default and an
+  explicit CORS allow-list. This is a recorded gap, not a claim of
+  protection — see [ADR-0003](../decisions/ADR-0003-authentication-deferred.md).
+- Passwords hashed with Argon2id (`argon2-cffi`, m=45056 KiB, t=3, p=1);
+  never reversible. A session token exists in plaintext only in the
+  `Set-Cookie` header: storage keeps an HMAC-SHA256 digest.
 - The API binds to `127.0.0.1` by default and CORS is an explicit
   allow-list from `API_ALLOWED_ORIGINS`; `Settings` rejects `*` outside
   `development`/`test`.
@@ -152,11 +160,36 @@ Delivered:
   [ADR-0002](../decisions/ADR-0002-shared-contract-without-codegen.md).
 - API, contract and integration tests green in CI.
 
-Not delivered (recorded, not hidden):
+Not delivered in Phase 1 (recorded, not hidden — all three are addressed in
+section 9):
 
 - **Authentication with session management** — moved to Phase 2 by
   [ADR-0003](../decisions/ADR-0003-authentication-deferred.md); the roadmap
   was amended in the same change.
 - Rate limiting and CSRF, which depend on authentication.
-- `/ready` reports `database: not_configured`: there is no database in
-  Phase 1 and the API does not claim otherwise.
+- `/ready` reported `database: not_configured`, because Phase 1 had no
+  database and the API did not claim health it could not observe.
+
+---
+
+## 9. Phase 2 — database and authentication, as delivered
+
+- PostgreSQL through SQLAlchemy 2.0 (async) with Alembic migrations; one
+  revision builds the schema from empty. `alembic/env.py` prefers
+  `HQOS_DATABASE_URL` and otherwise reads `Settings`.
+- Tables: `users`, `sessions`, `audit_log`. `audit_log` is append-only by
+  trigger, with a `CHECK` constraint on `event_type`.
+- `AuthService`: Argon2id password hashing, session tokens stored as an
+  HMAC-SHA256 digest, login/logout/me over HTTP with the `hqos_session`
+  cookie.
+- Unknown account and wrong password produce byte-identical refusals; both
+  are audited, so the distinction lives in the log rather than on the wire.
+- An unreachable database is a `503` with no `Set-Cookie`, no connection
+  string and no traceback in the body.
+- A session survives an API restart, which is what storing it in PostgreSQL
+  rather than in process memory is for.
+
+Still open inside Phase 2 (see `docs/PROJECT-STATUS.md`): backup/restore
+scripts with a test, and the Phase 2 tables for datasets, provenance,
+experiments, strategies and journal entries. Rate limiting and a per-request
+CSRF token remain unimplemented.

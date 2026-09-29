@@ -10,14 +10,20 @@ between the two sides is caught by tests, not by review:
   opposite direction;
 - both sides validate ``tests/contracts/system-status.json``.
 
-Readiness semantics (Phase 1)
------------------------------
+Readiness semantics
+-------------------
 ``/ready`` answers exactly one question: *can this process serve requests?*
 
-It does **not** claim that PostgreSQL is healthy, because no database exists
-before Phase 2. The database check therefore reports ``not_configured`` — an
-honest state, not a pass. When the storage layer lands in Phase 2 the check
-becomes required, and a missing database will flip the endpoint to ``503``.
+The database is a required check since Phase 2: the API performs a real
+round trip and reports ``ok`` when PostgreSQL answers and ``failed`` when it
+does not, with a failed check flipping the endpoint to ``503``. It is never
+reported as healthy because a connection *should* work.
+
+``not_configured`` stays in the vocabulary - it is the honest state for a
+dependency that has not been set up yet, and both language mirrors keep it
+so the two sides cannot drift - but Phase 2 no longer emits it for the
+database, because claiming the application has no database would now be
+false.
 """
 
 from __future__ import annotations

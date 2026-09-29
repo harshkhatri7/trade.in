@@ -1,7 +1,9 @@
 # Database architecture
 
-**Phase:** 0 — Foundation. **No database exists yet (Phase 2).** This document
-fixes the model so Phase 2 implements a single agreed design.
+**Phase:** 2 — Database. PostgreSQL now exists and holds `users`,
+`sessions` and `audit_log`; this document remains the agreed design that the
+rest of the schema is built to. Sections marked *planned* describe tables
+that do not exist yet.
 
 ---
 
@@ -92,7 +94,9 @@ Rules:
   restoring a backup.
 - `scripts/data/reset-database.ps1` drops and recreates the **local
   development** database only, and refuses to run outside `development`.
-- CI runs migrations from empty on every pull request (Phase 2).
+- CI runs migrations from empty on every pull request
+  (`tests/integration/test_migrations.py`, in the job that carries a
+  PostgreSQL service).
 
 ---
 
@@ -108,7 +112,9 @@ Rules:
 
 ## 7. Backup and recovery
 
-Planned in Phase 2, documented in [backup](../operations/backup.md) and
+**Not implemented — an open Phase 2 exit criterion.** Nothing in this
+repository takes a backup today, so no document may imply otherwise.
+Documented intent, in [backup](../operations/backup.md) and
 [disaster recovery](../operations/disaster-recovery.md):
 
 - nightly logical dump of the metadata database;
@@ -119,8 +125,14 @@ Planned in Phase 2, documented in [backup](../operations/backup.md) and
 
 ## 8. Phase 2 exit criteria
 
-- Empty → current migrations run cleanly; rollback path documented.
-- Provenance, experiment, strategy, journal and audit tables exist.
-- Money columns are exact-numeric; timestamps are `timestamptz`.
-- Application role cannot modify audit rows.
-- Backup and restore verified once, end to end.
+| Criterion                                                        | Status |
+| ---------------------------------------------------------------- | ------ |
+| Empty → current migrations run cleanly; rollback path documented | **Met** — `tests/integration/test_migrations.py`, and `npm run db:downgrade` |
+| Audit table is append-only                                       | **Met** — trigger plus `CHECK` constraint, both asserted by a test |
+| Sessions survive a restart and are covered by tests              | **Met** — `tests/integration/test_auth_http.py` |
+| Provenance, experiment, strategy, journal and audit tables exist  | **Partly** — `audit_log` exists; the other four domains do not |
+| Money columns are exact-numeric; timestamps are `timestamptz`    | **Partly** — every timestamp that exists is `timestamptz`; no money columns exist yet |
+| Application role cannot modify audit rows                        | **Met** — the trigger refuses `UPDATE` and `DELETE` for any role |
+| Backup and restore verified once, end to end                     | **Not met** |
+
+Because the last row is unmet, Phase 2 is **not** complete.

@@ -10,18 +10,58 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 ## [Unreleased]
 
-Phase 1 — Application skeleton. A real request path, nothing more: browser →
+### Phase 2 — database and authentication (in progress)
+
+#### Added
+
+- **PostgreSQL persistence** `src/harsh_quant_os/db/` — SQLAlchemy 2.0 async
+  engine, session factory and the `users` / `sessions` / `audit_log` models.
+- **Migrations** `alembic/` + `alembic.ini` — one revision
+  (`930c38609bc3`) builds the whole schema from empty; `alembic/env.py`
+  prefers `HQOS_DATABASE_URL` and otherwise reads `Settings`.
+- **Append-only audit log** — an append-only trigger plus a `CHECK`
+  constraint on `event_type`; the application cannot rewrite history even if
+  a caller tries.
+- **Authentication** `src/harsh_quant_os/auth/` — Argon2id password hashing,
+  session tokens stored as an HMAC-SHA256 digest, and `POST
+  /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET /api/v1/me`. There is
+  no open registration: accounts come from `hqos user create`.
+- **`hqos user create` CLI** — reads the password from `--password-stdin` or
+  a TTY prompt, refuses a placeholder, and never echoes a credential.
+- **`npm run db:migrate` / `npm run db:downgrade`** — Alembic through
+  `scripts/data/migrate.ps1`, with `://...@` redacted from everything it
+  prints.
+- **`HQOS_REQUIRE_POSTGRES=1`** — turns "the database was not there" from a
+  skip into a failure; the CI integration job sets it alongside a PostgreSQL
+  service.
+- Contract parity for the auth context across Python, TypeScript and a shared
+  fixture.
+
+#### Fixed
+
+- `login()` committed nothing on success, so the caller's context manager
+  rolled back the brand-new session row and a "successful" login could never
+  authenticate. Both the success and the refusal path now commit.
+
+#### Not yet delivered
+
+Backup and restore with an end-to-end test, the Phase 2 schema domains beyond
+identity and audit, rate limiting and a per-request CSRF token.
+
+### Phase 1 — Application skeleton
+
+Phase 1 — A real request path, nothing more: browser →
 HTTP → FastAPI → settings → health response, with the contract proved on
 both sides.
 
-### Added
+#### Added
 
 - **API service** `apps/api` — FastAPI application with `GET /api/v1/health`
   and `GET /api/v1/ready` (aliases at `/health` and `/ready`), served from
   typed Pydantic models in `harsh_quant_os.contracts.system`; structured
   logging with request ids, RFC 7807 problem+json error handling, CORS from
-  configuration, OpenAPI disabled in production. `/ready` reports
-  `database: not_configured` because Phase 1 has no database.
+  configuration, OpenAPI disabled in production. `/ready` reported
+  `database: not_configured` because Phase 1 had no database.
 - **Web application** `apps/web` — Next.js 16 + React 19 + Tailwind CSS 4
   shell: dark, responsive, accessible (landmarks, skip link, reduced-motion),
   showing the phase and the **live** `/health` response. No charts, no market
@@ -51,7 +91,7 @@ both sides.
 - **Decisions** — ADR-0002 (shared contract without codegen), ADR-0003
   (authentication deferred to Phase 2), with the matching roadmap amendment.
 
-### Changed
+#### Changed
 
 - `.env.example` — CORS allow-list default widened to both localhost origins,
   plus `NEXT_PUBLIC_API_BASE_URL`; documented what each key controls.
@@ -61,14 +101,14 @@ both sides.
 - `next.config.ts` sets `agentRules: false`: Next does not write
   `AGENTS.md`/`CLAUDE.md` into a tree whose documentation is machine-tested.
 
-### Security
+#### Security
 
 - CORS is an explicit allow-list from `API_ALLOWED_ORIGINS`; `Settings`
   rejects a wildcard outside `development`/`test` (test enforced).
 - The API binds to `127.0.0.1` by default and exposes only read-only
   endpoints; no state-changing route exists.
 
-### Known limitations
+#### Known limitations
 
 - **No authentication.** Roadmap Phase 1 originally required it; ADR-0003
   records the deviation and moves it to Phase 2, together with the roadmap

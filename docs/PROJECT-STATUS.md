@@ -4,13 +4,13 @@
 | -------------------- | ---------------------------------------------- |
 | **Project**          | HARSH QUANT OS                                 |
 | **Version**          | 0.1.0-alpha                                    |
-| **Current phase**    | 1 — Application skeleton                       |
+| **Current phase**    | 2 — Database and authentication (in progress)  |
 | **Live trading**     | **DISABLED**                                   |
 | **Broker**           | **NOT CONNECTED**                              |
 | **Paper trading**    | NOT IMPLEMENTED                                |
 | **Capital (paper)**  | ₹1,000                                         |
 | **Primary objective**| Build reliable research infrastructure         |
-| **Last updated**     | 2026-09-28                                     |
+| **Last updated**     | 2026-09-29                                     |
 
 > This file states only what is true right now. It is validated by
 > `tests/unit/test_documentation.py`, and it must be updated in the same
@@ -24,26 +24,31 @@
 | --------------------------- | ------------------------------------------------------------ |
 | Git repository              | Initialized, branch `main`, no remote configured             |
 | Repository layout           | `apps/`, `packages/`, `src/`, `agents/`, `docs/`, `tests/`, `scripts/`, `infrastructure/` |
-| Documentation               | Complete for Phases 0–1 (architecture, development, security, operations, research, ADRs) |
+| Documentation               | Complete for Phases 0–2 (architecture, development, security, operations, research, ADRs) |
+| Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log` |
+| Migrations                  | One revision (`930c38609bc3`); empty → head → empty is covered by a test |
+| Authentication              | `AuthService`: Argon2id, sessions in PostgreSQL, `hqos_session` cookie |
+| Audit log                   | Append-only by trigger and `CHECK` constraint; every login outcome recorded |
 | Web application             | `apps/web` — Next.js 16 + React 19 + Tailwind 4 shell         |
-| API service                 | `apps/api` — FastAPI, `/api/v1/health` and `/api/v1/ready`    |
+| API service                 | `apps/api` — FastAPI: health, readiness, login, logout, `/me`  |
 | API client                  | Typed client in `apps/web/src/api-client` with explicit loading / connected / error / unavailable states |
-| Shared contract             | Python models, TypeScript mirrors and a fixture, checked in both directions |
+| Shared contract             | Python models, TypeScript mirrors and fixtures, checked in both directions (system status and auth context) |
 | Configuration               | Typed `Settings` with safety validation (single source for env) |
 | Safety gates                | Implemented and covered by tests                             |
 | Data contracts              | Provenance record, job contract, memory categories, system status |
-| Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin |
+| Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
-| Tests                       | pytest + Vitest, including contract parity, integration (real HTTP and API → client → DOM), security and documentation suites |
-| CI                          | GitHub Actions: TypeScript, Python, integration, repository policy |
-| Local environment scripts   | setup, environment provisioning, health check, validation, dev launcher, database helpers |
+| Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
+| CI                          | GitHub Actions: TypeScript, Python, integration (with a PostgreSQL service and `HQOS_REQUIRE_POSTGRES=1`), repository policy |
+| Local environment scripts   | setup, environment provisioning, health check, validation, dev launcher, database helpers (start, migrate, reset) |
 
 ### Running it
 
 ```powershell
-npm run dev     # API + web, ports read from .env
-npm run check   # format:check + lint + typecheck + vitest + pytest
-npm run health  # environment health report (real results only)
+npm run dev        # API + web, ports read from .env
+npm run check      # format:check + lint + typecheck + vitest + pytest
+npm run health     # environment health report (real results only)
+npm run db:migrate # apply Alembic migrations (redacted output)
 ```
 
 ### Endpoints that exist
@@ -52,9 +57,17 @@ npm run health  # environment health report (real results only)
 | ------------------------- | -------------------------------------------------------------- |
 | `GET /api/v1/health`      | Process liveness, version and environment (also at `/health`)  |
 | `GET /api/v1/ready`       | Readiness with explicit checks (also at `/ready`)              |
+| `POST /api/v1/auth/login` | Open a session; sets the `hqos_session` cookie                 |
+| `POST /api/v1/auth/logout`| Revoke the current session (`204`)                             |
+| `GET /api/v1/me`          | The authenticated account and its session                      |
 
-`/ready` reports `database: not_configured`. Phase 1 has no database and the
-API does not pretend otherwise.
+`/ready` performs a real round trip to PostgreSQL and reports `database: ok`
+or `database: failed`; a failed check answers `503`. `not_configured` is no
+longer emitted for the database — the application has one, so saying it does
+not would be false.
+
+There is **no open registration**: accounts are created out of band with
+`hqos user create`.
 
 ---
 
@@ -63,8 +76,11 @@ API does not pretend otherwise.
 Nothing below is implemented. Any document or screen claiming otherwise is a
 defect.
 
-- Authentication and sessions — Phase 2 (deferred from Phase 1, ADR-0003)
-- Database schema and migrations — Phase 2
+- Backup and restore scripts with an end-to-end test — required by the
+  Phase 2 exit criteria
+- The Phase 2 schema domains beyond identity and audit: datasets and their
+  provenance, experiments, strategies, journal entries
+- Rate limiting and a per-request CSRF token
 - Market-data ingestion and historical data — Phase 3
 - Market terminal and charts — Phase 4
 - Quant / feature engine — Phase 5
@@ -82,12 +98,12 @@ defect.
 - Continuous optimization — Phase 17
 
 There is no dashboard, no chart, no market number, no signal, no backtest and
-no trading of any kind in the Phase 1 interface. The only value the web app
-displays comes from a validated `/health` response.
+no trading of any kind in the interface. The only value the web app displays
+comes from a validated `/health` response.
 
 ---
 
-## 3. Environment observed at Phase 0 and verified again in Phase 1
+## 3. Environment observed at Phase 0 and verified again in Phase 2
 
 | Tool            | Observed                                             |
 | --------------- | ---------------------------------------------------- |
@@ -116,45 +132,41 @@ prints actual results.
 | Risk engine independent of strategy logic   | Enforced by architecture                             |
 | Secrets in the repository                   | None found by the secret scan                        |
 | AI access to filesystem / shell / broker    | Not granted                                          |
-| API authentication                          | **Not implemented** — Phase 2, see ADR-0003           |
+| API authentication                          | **Implemented** — session cookie over PostgreSQL; no open registration |
+| Rate limiting / per-request CSRF token      | **Not implemented** — recorded gap, see `docs/architecture/backend.md` §6 |
 | API network exposure                        | Binds to `127.0.0.1` by default; CORS is an allow-list |
-| State-changing API endpoints                | None (Phase 1 is read-only)                          |
+| State-changing API endpoints                | Login and logout only (a session, never a position)   |
+| Live trading                                | Not implemented; cannot be enabled by configuration   |
 
 ---
 
-## 5. Open items at the end of Phase 1
+## 5. Open items carried forward
 
-1. **Authentication is missing.** Roadmap Phase 1 originally required it;
-   [ADR-0003](decisions/ADR-0003-authentication-deferred.md) moves it to
-   Phase 2 because sessions need the Phase 2 database. Until then the API has
-   no authentication. Mitigations (localhost bind, CORS allow-list, no
-   sensitive or write endpoints) are listed in that ADR and are not a
-   substitute for it.
-2. Git identity is configured locally as a personal name and email rather
+1. **Phase 2 is not finished.** The roadmap's exit criteria require backup
+   and restore to be tested end to end, and the schema domains beyond
+   identity and audit do not exist yet. Do not describe Phase 2 as complete
+   until both are true.
+2. **No per-request CSRF token.** The session cookie is `SameSite=Lax`, the
+   API binds to loopback and CORS is an allow-list; that is the current
+   mitigation, not a substitute for a token. The limitation is documented in
+   `docs/architecture/backend.md`.
+3. Git identity is configured locally as a personal name and email rather
    than the Phase 0 placeholder. Check it is the identity you want before a
    remote exists: `git config user.name` and `git config user.email`.
-3. No Git remote exists. Adding GitHub is a manual step — nothing is pushed
+4. No Git remote exists. Adding GitHub is a manual step — nothing is pushed
    automatically.
-4. **The local `.env` is not provisioned.** Its secret keys still hold the
-   template placeholders and its CORS allow-list is missing the
-   `http://127.0.0.1:3000` origin that `.env.example` carries, so anything
-   that needs those values refuses to start. Writing `.env` is reserved for
-   the human (AGENTS.md section 3); the whole fix is one command,
-   `npm run env:provision`, which generates values locally and prints only
-   key names. The PostgreSQL volume was created *before* that provisioning,
-   so it also needs re-creating afterwards — `docker compose down -v`, then
-   `npm run db:start` — to pick up the new password.
 5. The TypeScript integration test needs Python with FastAPI installed; it
-   skips with a printed reason when they are absent (CI runs it in a job
-   that installs them, so it cannot skip there silently).
+   skips with a printed reason when they are absent (the CI integration job
+   installs them and sets `HQOS_REQUIRE_POSTGRES=1`, so a database test that
+   cannot run fails there rather than skipping).
+6. `.env` is provisioned except for `local_agent_token`, which is reserved
+   for the human to supply (AGENTS.md section 3).
 
 ---
 
 ## 6. Next step
 
-**One task only:** Phase 2 — database (PostgreSQL schema, migrations,
-environment-driven credentials) together with the authentication and session
-work deferred by ADR-0003. Do not start Phase 3 until Phase 2 meets its exit
-criteria.
-
-See [ROADMAP.md](ROADMAP.md).
+**Finish Phase 2:** backup and restore scripts with an end-to-end test, then
+the remaining Phase 2 schema domains. Only after the exit criteria in
+[ROADMAP.md](ROADMAP.md) are met does the phase close — and Phase 3 does not
+start before that.

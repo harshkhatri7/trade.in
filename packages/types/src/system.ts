@@ -44,8 +44,11 @@ export type ReadinessStatus = 'ready' | 'not_ready';
 
 /**
  * State of one readiness dependency. `not_configured` is deliberately distinct
- * from `ok`: in Phase 1 the database does not exist, and saying so is more
- * useful than reporting a pass that was never earned.
+ * from `ok`: a dependency that has never been configured is not a pass, and
+ * saying so is more useful than reporting one that was never earned. Since
+ * Phase 2 the database is configured and probed, so the API answers `ok` or
+ * `failed` and no longer produces `not_configured`; the value remains here so
+ * the two languages keep the same vocabulary.
  */
 export type CheckStatus = 'ok' | 'not_configured' | 'failed';
 
