@@ -27,6 +27,7 @@
 | Documentation               | Complete for Phases 0–2 (architecture, development, security, operations, research, ADRs) |
 | Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log` |
 | Migrations                  | One revision (`930c38609bc3`); empty → head → empty is covered by a test |
+| Backup and restore          | `harsh_quant_os.db.backup` — binary COPY with the schema revision in the manifest; round trip proved by a test |
 | Authentication              | `AuthService`: Argon2id, sessions in PostgreSQL, `hqos_session` cookie |
 | Audit log                   | Append-only by trigger and `CHECK` constraint; every login outcome recorded |
 | Web application             | `apps/web` — Next.js 16 + React 19 + Tailwind 4 shell         |
@@ -76,10 +77,9 @@ There is **no open registration**: accounts are created out of band with
 Nothing below is implemented. Any document or screen claiming otherwise is a
 defect.
 
-- Backup and restore scripts with an end-to-end test — required by the
-  Phase 2 exit criteria
 - The Phase 2 schema domains beyond identity and audit: datasets and their
   provenance, experiments, strategies, journal entries
+- Nightly scheduling of backups, and where backup output is stored off-machine
 - Rate limiting and a per-request CSRF token
 - Market-data ingestion and historical data — Phase 3
 - Market terminal and charts — Phase 4
@@ -142,10 +142,12 @@ prints actual results.
 
 ## 5. Open items carried forward
 
-1. **Phase 2 is not finished.** The roadmap's exit criteria require backup
-   and restore to be tested end to end, and the schema domains beyond
-   identity and audit do not exist yet. Do not describe Phase 2 as complete
-   until both are true.
+1. **Phase 2 is not finished.** Every exit criterion in
+   [ROADMAP.md](ROADMAP.md) is now met — migrations from empty, an
+   append-only audit table, tested backup and restore, and sessions that
+   survive a restart — but the phase's schema deliverables (datasets,
+   provenance, experiments, strategies, journal entries) do not exist yet.
+   Do not describe Phase 2 as complete until they do.
 2. **No per-request CSRF token.** The session cookie is `SameSite=Lax`, the
    API binds to loopback and CORS is an allow-list; that is the current
    mitigation, not a substitute for a token. The limitation is documented in
@@ -166,7 +168,8 @@ prints actual results.
 
 ## 6. Next step
 
-**Finish Phase 2:** backup and restore scripts with an end-to-end test, then
-the remaining Phase 2 schema domains. Only after the exit criteria in
-[ROADMAP.md](ROADMAP.md) are met does the phase close — and Phase 3 does not
-start before that.
+**Finish Phase 2:** the remaining schema domains — datasets and their
+provenance, experiments, strategies and journal entries — so the deliverables
+listed in [ROADMAP.md](ROADMAP.md) match what the migrations actually create.
+The exit criteria are met; the deliverables are not, and Phase 3 does not
+start before both are.

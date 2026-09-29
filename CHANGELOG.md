@@ -36,6 +36,12 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
   service.
 - Contract parity for the auth context across Python, TypeScript and a shared
   fixture.
+- **Backup and restore** `src/harsh_quant_os/db/backup.py` — every table in a
+  single transaction using PostgreSQL's binary COPY, with the Alembic
+  revision recorded in `manifest.json`. A restore into a database at a
+  different revision, into populated data, or from a directory without a
+  manifest is refused rather than attempted, and identity sequences are
+  re-aimed so the first insert after a restore cannot collide.
 
 #### Fixed
 
@@ -45,8 +51,9 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 #### Not yet delivered
 
-Backup and restore with an end-to-end test, the Phase 2 schema domains beyond
-identity and audit, rate limiting and a per-request CSRF token.
+The Phase 2 schema domains beyond identity and audit (datasets, provenance,
+experiments, strategies, journal entries), nightly backup scheduling, rate
+limiting and a per-request CSRF token.
 
 ### Phase 1 — Application skeleton
 

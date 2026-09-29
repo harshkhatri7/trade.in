@@ -112,12 +112,24 @@ Rules:
 
 ## 7. Backup and recovery
 
-**Not implemented — an open Phase 2 exit criterion.** Nothing in this
-repository takes a backup today, so no document may imply otherwise.
-Documented intent, in [backup](../operations/backup.md) and
-[disaster recovery](../operations/disaster-recovery.md):
+**Implemented and tested.** `harsh_quant_os.db.backup` exports every table in
+one transaction with PostgreSQL's binary COPY and records the Alembic
+revision it was taken at; `import_database` refuses a database at a different
+revision, refuses to truncate data unless it is asked to, and re-aims the
+identity sequences afterwards so the first insert after a restore does not
+collide with a restored row. `tests/integration/test_backup_restore.py` runs
+the whole path — export, rebuild from empty, restore, compare every row — on
+`harsh_quant_os_backup_probe`.
 
-- nightly logical dump of the metadata database;
+It is a logical backup of **rows**, not a `pg_dump`: roles, permissions,
+extensions and DDL are not captured, because migrations rebuild DDL. That is
+the right trade for a metadata database; see the module docstring for where
+it stops being the right trade.
+
+Documented intent still outstanding, in [backup](../operations/backup.md)
+and [disaster recovery](../operations/disaster-recovery.md):
+
+- nightly scheduling of the above, and where the output is stored;
 - dataset store backed up separately (local disk → external media/cloud);
 - restore rehearsed before Phase 6 results are relied upon.
 
@@ -130,9 +142,13 @@ Documented intent, in [backup](../operations/backup.md) and
 | Empty → current migrations run cleanly; rollback path documented | **Met** — `tests/integration/test_migrations.py`, and `npm run db:downgrade` |
 | Audit table is append-only                                       | **Met** — trigger plus `CHECK` constraint, both asserted by a test |
 | Sessions survive a restart and are covered by tests              | **Met** — `tests/integration/test_auth_http.py` |
+| Backup and restore verified once, end to end                     | **Met** — `tests/integration/test_backup_restore.py` |
+| Application role cannot modify audit rows                        | **Met** — the trigger refuses `UPDATE` and `DELETE` for any role |
 | Provenance, experiment, strategy, journal and audit tables exist  | **Partly** — `audit_log` exists; the other four domains do not |
 | Money columns are exact-numeric; timestamps are `timestamptz`    | **Partly** — every timestamp that exists is `timestamptz`; no money columns exist yet |
-| Application role cannot modify audit rows                        | **Met** — the trigger refuses `UPDATE` and `DELETE` for any role |
-| Backup and restore verified once, end to end                     | **Not met** |
 
-Because the last row is unmet, Phase 2 is **not** complete.
+Every exit criterion in [ROADMAP.md](../ROADMAP.md) is now met: migrations
+build from empty and roll back, the audit table is append-only, backup and
+restore are tested, and sessions survive a restart. The two partly-met rows
+above are Phase 2 **deliverables** (the schema domains) rather than exit
+criteria, and are the reason the phase is not closed yet.

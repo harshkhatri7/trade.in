@@ -188,8 +188,12 @@ section 9):
   string and no traceback in the body.
 - A session survives an API restart, which is what storing it in PostgreSQL
   rather than in process memory is for.
+- Backup and restore (`harsh_quant_os.db.backup`): every table in one
+  transaction, the Alembic revision recorded in the manifest, a restore
+  refused at a different revision or into populated data unless asked, and
+  sequences re-aimed so the next insert cannot collide. Verified end to end
+  by `tests/integration/test_backup_restore.py`.
 
-Still open inside Phase 2 (see `docs/PROJECT-STATUS.md`): backup/restore
-scripts with a test, and the Phase 2 tables for datasets, provenance,
-experiments, strategies and journal entries. Rate limiting and a per-request
-CSRF token remain unimplemented.
+Still open inside Phase 2 (see `docs/PROJECT-STATUS.md`): the schema domains
+for datasets, provenance, experiments, strategies and journal entries. Rate
+limiting and a per-request CSRF token remain unimplemented.
