@@ -121,7 +121,10 @@ line-ending = "lf"
 # ----------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "tests", "apps/api"]
+# `alembic` is included because its `env.py` decides which database a
+# migration touches; leaving it out of a strict check would let the one file
+# that can point at the wrong server drift unchecked.
+files = ["src", "tests", "apps/api", "alembic"]
 plugins = ["pydantic.mypy"]
 strict = true
 warn_unreachable = true

@@ -104,6 +104,30 @@ jobs:
     name: Integration (API over HTTP, API to client to DOM)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Phase 2 stores sessions in PostgreSQL, so this job is the one that has
+    # to have a server. The service is the same image docker-compose.yml
+    # uses, with the credential `Settings` already defaults to, so a fresh
+    # clone and CI build an identical connection string. The flag is the
+    # important half: without it, "the database was never there" skips and a
+    # run whose database tests never executed looks exactly like a passing
+    # one. It turns that into a failure.
+    env:
+      HQOS_REQUIRE_POSTGRES: '1'
+      DATABASE_URL: postgresql+asyncpg://harsh_quant_os:replace-with-a-local-dev-password@127.0.0.1:5432/harsh_quant_os
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: harsh_quant_os
+          POSTGRES_PASSWORD: replace-with-a-local-dev-password
+          POSTGRES_DB: harsh_quant_os
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U harsh_quant_os -d harsh_quant_os"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Checkout
         uses: actions/checkout@v4

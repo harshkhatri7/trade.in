@@ -169,6 +169,51 @@ async def test_an_unknown_address_and_a_wrong_password_are_indistinguishable(
 
 
 @pytest.mark.integration
+async def test_a_session_survives_an_api_restart(
+    require_postgres: None,
+    test_database_url: str,
+    auth_service: AuthService,
+) -> None:
+    """Phase 2 exit criterion: the session outlives the process that made it.
+
+    Log in against one uvicorn process, let that process exit completely,
+    then start a second one and present the original cookie. Nothing in the
+    first process's memory can help here, so a pass is evidence that
+    PostgreSQL - not the running API - is what a session actually is.
+    """
+    _ = require_postgres
+    email = _email("restart")
+    await auth_service.create_user(email=email, password=PASSWORD)
+
+    with (
+        running_api({"DATABASE_URL": test_database_url}) as before,
+        httpx2.Client(base_url=before, timeout=10.0) as browser,
+    ):
+        login = browser.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+        assert login.status_code == 200, login.text
+        issued = browser.cookies.get(SESSION_COOKIE)
+        assert issued, "the login set no cookie, so there is nothing to carry over"
+
+    # `before` is closed here: the process that issued the token has exited.
+
+    with (
+        running_api({"DATABASE_URL": test_database_url}) as after,
+        httpx2.Client(base_url=after, timeout=10.0) as browser,
+    ):
+        browser.cookies.set(SESSION_COOKIE, issued, domain="127.0.0.1", path="/")
+        me = browser.get("/api/v1/me")
+        assert me.status_code == 200, (
+            f"the session did not survive the restart: {me.status_code} {me.text}"
+        )
+        assert me.json()["user"]["email"] == email
+
+        # And it is still revocable after the restart, not a stuck cookie.
+        logout = browser.post("/api/v1/auth/logout")
+        assert logout.status_code == 204, logout.text
+        assert browser.get("/api/v1/me").status_code == 401
+
+
+@pytest.mark.integration
 def test_a_login_cannot_claim_success_when_the_database_is_down() -> None:
     """Over a real socket, an unreachable database is 503 with no cookie.
 
