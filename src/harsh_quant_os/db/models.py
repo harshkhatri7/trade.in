@@ -209,15 +209,45 @@ class AuditLog(Base):
 
 
 class Dataset(Base):
-    """A named source of research data.
+    """A named source of research data, and the manifest for what was stored.
 
-    Holds no "where it came from": that is per acquisition and belongs to
+    Two kinds of fact live here, and they are kept apart on purpose:
+
+    * the **logical** dataset — name, description, author — which exists
+      before any file does;
+    * the **manifest** for the artefacts the store wrote: which instrument
+      and timeframe it holds, where the files are, what version they are,
+      and what quality validation assigned.
+
+    ``version`` and ``storage_path`` are both set or both absent: a
+    half-registered dataset would name a version with nowhere to read it,
+    or a path with no way to say which version it is. Quality status is
+    never absent — a row that has not been validated is ``pending``, which
+    is a claim about the data, rather than ``NULL``, which is a claim that
+    nobody looked.
+
+    Where a dataset *came from* is per acquisition and belongs to
     :class:`DatasetProvenance`, which records it in a row that cannot later
     change its mind.
     """
 
     __tablename__ = "datasets"
-    __table_args__ = (CheckConstraint("length(name) > 0", name="name_present"),)
+    __table_args__ = (
+        CheckConstraint("length(name) > 0", name="name_present"),
+        CheckConstraint(
+            "quality_status IN ('unknown', 'pending', 'valid', 'suspect', 'invalid')",
+            name="ck_datasets_quality_status",
+        ),
+        CheckConstraint(
+            "timeframe IS NULL OR timeframe IN "
+            "('tick', '1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1mo')",
+            name="ck_datasets_timeframe",
+        ),
+        CheckConstraint(
+            "(version IS NULL) = (storage_path IS NULL)",
+            name="ck_datasets_version_and_storage",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
@@ -226,6 +256,28 @@ class Dataset(Base):
     )
     name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Provider-neutral instrument identifier, set when the store wrote it.
+    instrument: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The :class:`~harsh_quant_os.contracts.provenance.Timeframe` value.
+    #: ``Text`` rather than an enum type because the values are validated by
+    #: a named check constraint, which PostgreSQL reports by name when it
+    #: refuses a row and SQLAlchemy cannot silently widen.
+    timeframe: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Validation's verdict on the stored artefact, copied from the report
+    #: rather than decided here. ``pending`` is the default because a row
+    #: that has not been validated has not been validated.
+    quality_status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'pending'"),
+        index=True,
+    )
+    #: SHA-256 of the clean artefact: the same bars produce the same
+    #: version, which is what makes a re-ingest reproducible.
+    version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Path relative to the ``data/`` root, POSIX separators, so the store
+    #: can be moved without rewriting the manifest.
+    storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: ``ON DELETE SET NULL``: the record outlives its author instead of
     #: making the author undeletable forever.
     created_by: Mapped[uuid.UUID | None] = mapped_column(

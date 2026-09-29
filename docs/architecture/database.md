@@ -73,16 +73,22 @@ provenance        lineage: raw artefact URI / ingestion run id
 version           dataset version
 ```
 
-Two different granularities, and only one of them exists yet:
+Three granularities, and two of them now exist:
 
-- **Acquisition level** — the `dataset_provenance` table that exists now
-  records where a *batch* came from: source, when it was acquired, checksum,
-  row count, licence. It answers "where did this file come from", which is
-  the question a backup cannot answer for you later.
-- **Row level** — the fields above (`symbol`, `timestamp`, `timeframe`,
-  `quality_status`, lineage) belong to the market-data tables themselves,
-  which are Phase 3. They are written here so that the acquisition table is
-  not mistaken for the whole of provenance.
+- **Acquisition level** — the `dataset_provenance` table records where a
+  *batch* came from: source, when it was acquired, checksum, row count,
+  licence. It answers "where did this file come from", which is the
+  question a backup cannot answer for you later. The row is append-only at
+  the database, so a later write cannot revise an earlier answer.
+- **Dataset level** — `datasets` carries the manifest fields Phase 3
+  added: `instrument`, `timeframe`, `quality_status`, `version` and
+  `storage_path`. This is the mapping from a logical dataset name to its
+  physical files and version. `version` and `storage_path` are both set or
+  both absent, so no row can name a version with nowhere to read it.
+- **Row level** — per-bar fields (`symbol`, `timestamp`, `quality_status`
+  per row) belong to the market-data tables themselves, which are still
+  future phases. They are listed here so that the dataset-level manifest
+  is not mistaken for the whole of provenance.
 
 Rules:
 
@@ -106,6 +112,9 @@ Rules:
 | Numeric exactness       | Money: `numeric(20, 6)` — never `float8`                    |
 | Enum safety             | `text` + `CHECK` (or native enums) matching the Pydantic/TS enums |
 | Deterministic ordering  | Every list query has an explicit `ORDER BY`                 |
+| Quality status is a known value | `CHECK` on `datasets.quality_status` (indexed), refusing anything outside the contract's five |
+| Manifest is never half-written | `CHECK (version IS NULL) = (storage_path IS NULL)` on `datasets` |
+| Timeframe is provider-neutral | `CHECK` on `datasets.timeframe`, or `NULL` for a dataset holding no series |
 
 ---
 

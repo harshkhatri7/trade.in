@@ -39,6 +39,25 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
   arrived. Nothing is reordered, filled, clamped or otherwise repaired,
   and tests pin each of those absences rather than only pinning the
   behaviour that is present.
+- **A local dataset store with an explicit manifest**
+  `harsh_quant_os.data.store` and `harsh_quant_os.data.manifest`.
+  Artefacts land in `data/raw/`, `data/clean/` or `data/quarantine/`, in
+  directories named by the SHA-256 of their own contents — so no write can
+  overwrite an earlier artefact, re-ingesting identical bars is idempotent,
+  and "raw is immutable" is a property of the layout rather than a
+  convention somebody has to keep. Writes are atomic: content goes to a
+  temporary file and is moved into place, so a file that exists is a file
+  that finished. Validation's verdict is authoritative — an invalid batch
+  raises `StoreRefused` rather than being stored, and the only path that
+  writes it anywhere is `quarantine_batch`, which does not touch `clean/`.
+  The manifest is one `datasets` row per logical name carrying quality
+  status, instrument, timeframe, version and storage path, upserted on the
+  name so a re-ingest updates it instead of creating a second dataset,
+  with an append-only provenance row appended per acquisition. A new
+  migration adds those five columns with three check constraints: the
+  status must be one the contract defines, the timeframe must be
+  provider-neutral, and `version` and `storage_path` are both set or both
+  absent — a half-written manifest is refused rather than discovered later.
 - **A test that fails the build if anything under `src/` imports a vendor
   SDK.** Provider independence is the sort of rule that erodes one
   convenient import at a time; parsing every file turns it into something
@@ -46,10 +65,9 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 #### Not yet delivered
 
-Provider adapters, ingestion, quality status on stored datasets, the local
-dataset store and its manifest, the session-calendar and second-source
-cross-checks, and the corporate-actions, news, fundamentals and options
-interfaces.
+Provider adapters and ingestion — so nothing has been fetched and the
+store is empty — the session-calendar and second-source cross-checks, and
+the corporate-actions, news, fundamentals and options interfaces.
 
 ### Phase 2 — database and authentication (complete)
 

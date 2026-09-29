@@ -39,6 +39,7 @@
 | Data contracts              | Provenance record, job contract, memory categories, system status |
 | Market-data interfaces      | `harsh_quant_os.data` — provider-neutral `Bar`/`BarRequest`, `HistoricalDataProvider` and `MarketDataProvider`, typed provider failures; a test fails the build if anything under `src/` imports a vendor SDK |
 | Validation pipeline         | `harsh_quant_os.data.validation` — schema quarantine, timestamp ordering, duplicates, gaps, outliers; session calendar and second-source cross-check not implemented |
+| Dataset store + manifest    | `data/raw`, `data/clean`, `data/quarantine` written content-addressed and atomically; `datasets` carries quality status, version and storage path with three check constraints; provenance appended per acquisition |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
@@ -87,10 +88,11 @@ defect.
 
 - Nightly scheduling of backups, and where backup output is stored off-machine
 - Rate limiting and a per-request CSRF token
-- Market-data **adapters, ingestion and storage manifests** — Phase 3.
-  Interfaces and validation exist; nothing fetches or stores anything yet,
-  and no provider has been called. The session-calendar and second-source
-  cross-checks have no implementation either.
+- Market-data **adapters and ingestion** — Phase 3. Interfaces,
+  validation, the store and its manifest all exist; nothing has been
+  fetched, so the store holds no data and no provider has been called.
+  The session-calendar and second-source cross-checks have no
+  implementation either.
 - Market terminal and charts — Phase 4
 - Quant / feature engine — Phase 5
 - Backtesting engine — Phase 6
@@ -183,12 +185,12 @@ prints actual results.
 committed; the phase-boundary stop was then lifted by the human, so Phase 3
 (Market-data engine) began with the provider-independent interface layer.
 
-Next, in [ROADMAP.md](ROADMAP.md) order: a local dataset store with an
-explicit manifest, then one concrete provider adapter behind the
-interface. Phase 3's exit criteria — raw data lands with complete
-provenance, and invalid data is quarantined rather than silently repaired
-or invented — are **not** met yet: validation now exists, but nothing has
-been ingested, so no data has landed anywhere.
+Next, in [ROADMAP.md](ROADMAP.md) order: one concrete provider adapter
+behind the interface — the last undelivered bullet of Phase 3. Phase 3's
+exit criteria — raw data lands with complete provenance, and invalid data
+is quarantined rather than silently repaired or invented — are **not** met
+yet: validation, the store and the manifest exist, but nothing has been
+fetched, so no data has landed anywhere.
 
 Carried forward, none of it Phase 3: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and

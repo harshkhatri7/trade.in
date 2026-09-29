@@ -104,8 +104,12 @@ data/
 ```
 
 None of these are committed to Git. `data/.gitignore` keeps the directory
-skeleton while excluding contents. The manifest (which lives in PostgreSQL in
-Phase 2) maps logical dataset names to physical files and versions.
+skeleton while excluding contents. The manifest lives in PostgreSQL — the
+`datasets` row for the logical name, plus an append-only
+`dataset_provenance` row per acquisition — and maps logical dataset names
+to physical files and versions. `raw/`, `clean/` and `quarantine/` are
+written by `harsh_quant_os.data.store`; `features/`, `exports/` and
+`cache/` are not implemented.
 
 ---
 
@@ -121,7 +125,7 @@ using the instrument's exchange calendar, never the machine's local clock.
 
 ---
 
-## 6. Current state (Phase 3, interface layer only)
+## 6. Current state (Phase 3 — interfaces, validation, storage; no ingestion)
 
 Implemented and tested:
 
@@ -146,12 +150,29 @@ Implemented and tested:
   and flags outliers without adjusting them. It never edits a bar, never
   fills a gap and never reorders anything, and tests pin each of those
   absences.
+- **The local dataset store** (`harsh_quant_os.data.store`) — `raw/`,
+  `clean/` and `quarantine/` under `data/`. Directories are
+  content-addressed by SHA-256, so no write can overwrite an earlier
+  artefact and re-ingesting identical bars is idempotent rather than
+  duplicating them. Writes go to a temporary file and are moved into
+  place, so a file that exists is a file that finished. Validation's
+  verdict is authoritative: an invalid batch raises `StoreRefused` instead
+  of being stored, and the only path that writes it anywhere is
+  `quarantine_batch`, which does not touch `clean/` or `raw/`.
+- **The manifest** (`harsh_quant_os.data.manifest`) — one `datasets` row
+  per logical name carrying quality status, instrument, timeframe, version
+  and storage path, upserted on the name so a re-ingest updates it rather
+  than creating a second dataset, with an append-only provenance row
+  appended for every acquisition. Registration happens after the files are
+  on disk, because a manifest row pointing at a file that was never
+  written is worse than no row.
 - A test that parses every file under `src/` and fails if any imports a
   vendor SDK — principle 1, made executable rather than aspirational.
 
-Not implemented: adapters, ingestion, storage manifests, the session
-calendar and second-source cross-check, and the four interfaces in
-section 2 without an implementation.
+Not implemented: adapters and ingestion, the session calendar and
+second-source cross-check, and the four interfaces in section 2 without
+an implementation. Nothing has been fetched, so no data has landed in the
+store yet.
 
 ---
 

@@ -460,3 +460,78 @@ def test_the_research_schema_keeps_the_promises_made_about_it(
             """,
         )
         assert approximate == [], "a float column would make money arithmetic wrong"
+
+
+def test_the_dataset_manifest_holds_what_phase_3_requires(
+    require_postgres: None, live_settings: Settings
+) -> None:
+    """Quality status, version and storage location, enforced by the schema.
+
+    Phase 3's roadmap bullet is "quality status, provenance and version on
+    every stored dataset". Provenance already has its own append-only
+    table from phase 2; this is the other half: the three facts exist, and
+    the database refuses every state that would make them meaningless.
+
+    Each assertion is a refusal that was provoked and observed in a
+    throwaway database, or a value read back from it. The rows are
+    fixtures dropped with that database; none is a price or a result.
+    """
+    _ = require_postgres
+
+    with _probe_database(live_settings) as url:
+        _upgrade(url)
+
+        # (a) A dataset nobody has validated says "pending" rather than
+        #     NULL. NULL would be a claim that nobody looked, which is a
+        #     different claim and not one the store ever makes.
+        query(url, "INSERT INTO datasets (name) VALUES ('manifest-default')")
+        assert query(url, "SELECT quality_status FROM datasets") == [("pending",)]
+
+        # (b) Quality status accepts only the values the shared contract
+        #     defines, so a typo cannot become a fourth, undiscoverable
+        #     state that nothing knows how to filter on.
+        with pytest.raises(Exception) as unknown_status:
+            query(url, "UPDATE datasets SET quality_status = 'fine'")
+        assert _sqlstate(unknown_status.value) == "23514", "not a check violation"
+        assert "ck_datasets_quality_status" in str(unknown_status.value)
+
+        # (c) Timeframe accepts provider-neutral values or NULL, which is
+        #     what a logical dataset that holds no series carries.
+        with pytest.raises(Exception) as invented_timeframe:
+            query(url, "UPDATE datasets SET timeframe = '6 hours'")
+        assert _sqlstate(invented_timeframe.value) == "23514", "not a check violation"
+        assert "ck_datasets_timeframe" in str(invented_timeframe.value)
+
+        query(url, "UPDATE datasets SET timeframe = '1d', instrument = 'TEST.NEUTRAL'")
+        assert query(url, "SELECT timeframe, instrument FROM datasets") == [("1d", "TEST.NEUTRAL")]
+
+        # (d) A version with nowhere to read it is refused, and so is a
+        #     path with no way to say which version it is. Either one alone
+        #     would be a manifest entry that cannot be acted on.
+        with pytest.raises(Exception) as bare_version:
+            query(url, "UPDATE datasets SET version = :value", {"value": "a" * 64})
+        assert _sqlstate(bare_version.value) == "23514", "not a check violation"
+        assert "ck_datasets_version_and_storage" in str(bare_version.value)
+
+        with pytest.raises(Exception) as bare_path:
+            query(url, "UPDATE datasets SET storage_path = 'clean/x/bars.csv'")
+        assert _sqlstate(bare_path.value) == "23514", "not a check violation"
+
+        # (e) Together they are accepted, and the status a validation
+        #     report assigned is what a reader gets back.
+        query(
+            url,
+            "UPDATE datasets SET version = :version, storage_path = :path, "
+            "quality_status = 'valid'",
+            {"version": "b" * 64, "path": "clean/manifest-default/b/bars.csv"},
+        )
+        assert query(url, "SELECT quality_status, version FROM datasets") == [("valid", "b" * 64)]
+
+        # (f) The status column is indexed. A dataset browser will filter on
+        #     it, and finding the suspect ones by scan would be a slow way
+        #     to discover what should never be used for a conclusion.
+        assert query(
+            url,
+            "SELECT indexname FROM pg_indexes "
+            "WHERE tablename = 'datasets' AND indexname = 'ix_datasets_quality_status'",
+        ) == [("ix_datasets_quality_status",)]
