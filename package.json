@@ -35,6 +35,8 @@
     "db:start": "docker compose up -d postgres",
     "db:stop": "docker compose stop postgres",
     "db:logs": "docker compose logs -f postgres",
+    "db:migrate": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\data\\migrate.ps1",
+    "db:downgrade": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\data\\migrate.ps1 -Downgrade",
     "db:reset": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\data\\reset-database.ps1"
   },
   "devDependencies": {

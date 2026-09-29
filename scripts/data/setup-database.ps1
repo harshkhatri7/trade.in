@@ -10,8 +10,8 @@
     the script reports exactly what is missing - it never reports success it
     did not observe.
 
-    No migrations exist yet (Phase 2); this script only prepares the empty
-    database.
+    This script only prepares the empty database. The schema itself is built
+    by the migrations, which are applied separately with `npm run db:migrate`.
 #>
 [CmdletBinding()]
 param(
@@ -60,7 +60,7 @@ try {
             exit 1
         }
         Write-Host '  ok    postgres container started' -ForegroundColor Green
-        Write-Host '  info  migrations are not implemented yet (Phase 2) - database is empty by design' -ForegroundColor DarkGray
+        Write-Host '  next  run npm run db:migrate to apply the schema' -ForegroundColor DarkGray
         exit 0
     }
 
