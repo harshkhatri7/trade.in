@@ -118,7 +118,9 @@ defect.
   panel), the stored-bars chart with its table, the persisted watchlist and
   the multi-timeframe view all exist; increments 1–4 are delivered and
   observed in a real browser.
-- Quant / feature engine — Phase 5
+- Quant / feature engine — Phase 5, in progress. The indicator library
+  with golden tests exists; statistics, transforms, recipes and the
+  feature store do not yet.
 - Backtesting engine — Phase 6
 - Strategy validation and walk-forward testing — Phase 7
 - AI research assistant — Phase 8
@@ -430,6 +432,32 @@ explicit in-conversation instruction to continue through the roadmap —
 that instruction conflicts with §2.9's stop-at-boundary rule, and the
 conflict is disclosed in the session report rather than silently
 resolved.
+
+**Phase 5 (Quant engine) is in progress.** Increment 1 — the indicator
+library — is delivered and validated on 2026-09-30:
+
+- `src/harsh_quant_os/quant/` with `series.py` (the shared input
+  boundary: an empty, non-1-D or non-finite series, and an invalid or
+  over-long window, raise `InvalidSeries` before any window rolls) and
+  `indicators/` (`sma`, `ema`, `rolling_std`, `rolling_zscore`,
+  `bollinger_bands`, `rolling_vwap`, `rsi`, `macd`) — every formula
+  written out in its module docstring, every window right-aligned;
+- `tests/quant/test_indicators.py`: 46 tests — golden values hand-derived
+  inside the test file (EMA as exact fractions `5/3, 23/9, 95/27, 365/81`,
+  RSI's Wilder recursion worked through fraction by fraction, population
+  variances, VWAP arithmetic), an independent window-loop cross-check, and
+  for every function the three mechanical properties quant-engine.md
+  requires: appending a future bar changes no earlier output (no
+  look-ahead), two calls are bit-identical (determinism), and the input
+  array is never mutated;
+- the `quant` extra (numpy, pandas, polars, scipy, scikit-learn,
+  statsmodels — already declared in `pyproject.toml` with a written reason
+  for each) is now installed in `.venv`;
+- battery: `pytest` 343 passed + 1 skipped (was 297 — +46 quant),
+  `ruff check` clean, `ruff format --check` clean, `mypy` clean over 101
+  source files (was 95);
+- not started within Phase 5: `stats/`, `transforms/`, `recipes/`,
+  `registry/`, the leakage split/label helpers, and the benchmark.
 
 Carried forward, none of it Phase 4: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and

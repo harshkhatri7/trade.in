@@ -42,7 +42,7 @@ backtest engine and no trading.
 | Database         | PostgreSQL + Alembic (Phase 2)       |
 | Market data      | Adapter, validation, store, manifest (Phase 3) |
 | Market terminal  | Dataset browser, stored-bars chart, watchlist, multi-timeframe views (Phase 4) |
-| Quant engine     | Not implemented (Phase 5)            |
+| Quant engine     | Indicator library, golden-tested (Phase 5, in progress)     |
 | Backtesting      | Not implemented (Phase 6)            |
 | Paper trading    | Not implemented (Phase 10)           |
 | Broker           | Not connected                        |

@@ -1,8 +1,7 @@
 # Quant engine architecture
 
-**Phase:** 0 — Foundation. **No quant code exists yet (Phase 5).** This
-document fixes the contracts and quality bar so Phase 5 cannot quietly lower
-them.
+**Phase:** 5 — Quant engine, in progress. This document fixes the contracts
+and quality bar for the code Phase 5 adds, so they cannot be quietly lowered.
 
 ---
 
@@ -88,12 +87,37 @@ packages/quant/
 
 ---
 
-## 6. Current state (Phase 0)
+## 6. Current state (Phase 5, increment 1)
 
-Nothing quant-specific is implemented. The only numeric helpers that exist
-are in `@harsh-quant-os/shared` (`percentChange`, `safeDivide`, `roundTo`)
-for display purposes, with unit tests. They are explicitly **not** the
-quant engine.
+Implemented:
+
+- `src/harsh_quant_os/quant/` — the engine package (`harsh_quant_os.quant`):
+  - `series.py` — the shared input boundary: an empty, non-1-D or
+    non-finite series, and an invalid or over-long window, raise
+    `InvalidSeries` before any window rolls. Warm-up NaN in outputs is
+    per-function and documented, distinct from missing input data.
+  - `indicators/` — `sma`, `ema` (first-value seed, no hidden warm-up
+    cut), `rolling_std` (`ddof=0`), `rolling_zscore` (flat window → NaN,
+    never an invented 0), `bollinger_bands`, `rolling_vwap`
+    (zero-volume window → NaN, negative volume refuses), `rsi` (Wilder's
+    smoothing, with the flat → 50 / no-loss → 100 / no-gain → 0 policies
+    stated in the module), `macd` (fast < slow enforced). Every formula
+    is written out in the module docstrings.
+- `tests/quant/test_indicators.py` — 46 tests: golden values derived by
+  hand in the test file (EMA as exact fractions `5/3, 23/9, 95/27,
+  365/81`; RSI's Wilder recursion worked through fraction by fraction;
+  population variances and VWAP arithmetic), an independent window-loop
+  cross-check, no-look-ahead properties (appending a future bar cannot
+  change any earlier output) asserted for every function, determinism and
+  input-immutability checks, and the validation refusals.
+- The `quant` extra (NumPy, Pandas, Polars, SciPy, scikit-learn,
+  statsmodels) installed in `.venv` per §2.
+
+Not started yet, all still Phase 5: `stats/`, `transforms/`, `recipes/`,
+`registry/`, the leakage split/label helpers, and the measured benchmark.
+The only other numeric helpers remain `@harsh-quant-os/shared`
+(`percentChange`, `safeDivide`, `roundTo`) for display purposes, with unit
+tests — explicitly **not** the quant engine.
 
 ---
 
