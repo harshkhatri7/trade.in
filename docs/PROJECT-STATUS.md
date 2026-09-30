@@ -118,10 +118,12 @@ defect.
   panel), the stored-bars chart with its table, the persisted watchlist and
   the multi-timeframe view all exist; increments 1–4 are delivered and
   observed in a real browser.
-- Quant / feature engine — Phase 5, in progress. The indicator library,
-  the statistical tests (stationarity, autocorrelation, correlation) and
-  the leakage-controlled transforms exist with golden tests; recipes and
-  the feature store do not yet.
+- Quant / feature engine — Phase 5, complete. The indicator library,
+  the statistical tests (stationarity, autocorrelation, correlation),
+  the leakage-controlled transforms, versioned feature recipes and the
+  on-disk feature store all exist with golden tests; the Phase 5 exit
+  criteria are assessed met below. Distribution fitting and
+  resampling/session alignment remain not implemented.
 - Backtesting engine — Phase 6
 - Strategy validation and walk-forward testing — Phase 7
 - AI research assistant — Phase 8
@@ -530,6 +532,95 @@ validated on 2026-09-30:**
   (157 files), `mypy` clean over 112 source files (was 106);
 - not started within Phase 5: `recipes/`, `registry/`, resampling and
   session alignment, and the benchmark.
+
+**Increment 4 — recipes, registry and the measured benchmark — is
+delivered and validated on 2026-09-30:**
+
+- `src/harsh_quant_os/quant/recipes/`: `recipe.py` (`DatasetRef`
+  pinning one dataset by name **and** content-addressed SHA-256;
+  `FeatureSpec` validated at construction against the closed op list;
+  `FeatureRecipe` with schema version, exactly one pinned input, an
+  execution-ordered feature list and a `nan_policy` sentence recorded
+  verbatim; canonical sorted-key JSON so the recipe's SHA-256 identity
+  does not depend on construction order, with `from_json` refusing
+  unknown and missing fields), `ops.py` (the closed whitelist `sma`,
+  `ema`, `rolling_std`, `rolling_zscore`, `rsi`, `log_returns`,
+  `simple_returns`, `lag` — each a golden-tested primitive; no `eval`,
+  no dynamic import, an unknown op fails with the known names listed),
+  `bars.py` (`BarBatch` validated at construction; `load_bar_batch`
+  re-hashes the clean artefact against its content-addressed directory
+  and refuses a mismatch, requires an explicit version when several
+  exist, and refuses missing volume with a count instead of filling
+  it), and `execute.py` (validate → compare the name/version pin
+  against the batch with both sides named → run in declaration order
+  where a source is an input column or an earlier feature; forward
+  references are unrepresentable, and a chained source carrying
+  warm-up NaN is refused by feature name rather than computed
+  through);
+- `src/harsh_quant_os/quant/registry/`: `FeatureStore` — entries keyed
+  by recipe hash holding `recipe.json`, `values.npy`, `times.npy` and
+  `meta.json` (dataset identity, shape, per-column NaN counts, SHA-256
+  over canonical little-endian bytes of both artefacts). `meta.json`
+  is written last: its presence is the completion marker, an
+  interrupted save is refused by name and repaired by a re-save, and
+  re-saving a complete entry compares checksums — a determinism
+  violation is an error for both sides, never an overwrite. `verify`
+  cross-checks the record against the recipe; `load_recipe` re-hashes
+  the file, so an edited recipe no longer hashes to its directory;
+- `tests/quant/test_recipes.py` (47) + `test_registry.py` (16): the
+  canonical JSON is asserted against a string written out byte for byte
+  with its SHA-256 recomputed independently; execution is
+  bit-identical and leaves inputs untouched; the version pin names
+  both sides on mismatch; reproduce-twice **through disk** is
+  bit-identical; tampered recipe/matrix/meta, incomplete entries,
+  wrong-recipe matrices, determinism violations and path escapes are
+  all refused with the reason. Every store fixture is written into
+  `tmp_path` — the suite never reads or writes `data/`;
+- `scripts/quant/benchmark_features.py`: measures execution on the real
+  661-row `kraken.xbtusd.1m` store through the same `load_bar_batch`
+  path research uses and checks each timed run against the cold run by
+  SHA-256 over canonical bytes (exit 1 if any run differed — the
+  harness reported its own first bug rather than passing quietly).
+  Measured on this machine (Python 3.12.10, numpy 2.5.3, Windows 11),
+  9 features, 126 NaN cells: cold 2.766 ms; 50 timed runs min 1.235 /
+  median 1.847 / max 4.528 ms; **50/50 runs SHA-256-identical** to the
+  cold run. Dataset version `0a7dd69ff1c4…e29b0`, recipe hash
+  `b38da597c454…e48e`, matrix hash `0a6138722513…1a45`. Timings are
+  observations that vary run to run; rerun the script to measure
+  again — the reproduction count is what the harness asserts;
+- filed entries land in `data/features/` (git-ignored local research
+  state, alongside `clean/` and `raw/`);
+- battery: `pytest` **492 passed** + 1 skipped (was 429 at increment 3
+  — +63 recipe/registry tests), `ruff check` clean, `ruff format
+  --check` clean (167 files), `mypy` clean over 121 source files (was
+  112);
+- not started within Phase 5: resampling/session-alignment helpers,
+  §4's timestamped `label_time >= info_time` label assertion, and
+  distribution fitting (named in quant-engine.md §1's responsibility
+  list but not an exit criterion in §7 — recorded as a gap, not
+  dropped).
+
+**Phase 5 exit criteria (quant-engine.md §7) — assessed 2026-09-30:**
+
+- Indicator library with golden tests and documented formulas —
+  **met**: 46 golden/property tests in `test_indicators.py`, every
+  formula written out in its module docstring.
+- Reproducible feature recipes with recorded versions — **met**:
+  increments 4 pin input dataset versions, hash the canonical recipe,
+  and reproduce the matrix bit-identically through disk (16 registry +
+  47 recipe tests, plus the benchmark's 50/50 checksum reproduction).
+- Leakage property tests passing — **met**: asserted mechanically in
+  `test_transforms.py` (46) and the recipe pin/refusal tests. §4's
+  scaling, shifting and split-disjointness rows are covered directly;
+  the label row is covered only by `forward_return`'s unobservable-tail
+  NaN — the timestamped `label_time >= info_time` helper itself remains
+  not implemented and is listed above.
+- Benchmark data documented; performance measured, not assumed —
+  **met**: the numbers above came from running the script; they are
+  recorded with their machine context and the command that reproduces
+  them, and no number in this document was written without a run.
+- `ruff`, `mypy --strict` and the full test suite green — **met**:
+  492 passed + 1 skipped; ruff check, ruff format and mypy clean.
 
 Carried forward, none of it Phase 4: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and

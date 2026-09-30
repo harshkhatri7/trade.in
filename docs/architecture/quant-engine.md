@@ -87,7 +87,7 @@ packages/quant/
 
 ---
 
-## 6. Current state (Phase 5, increment 3)
+## 6. Current state (Phase 5, increment 4)
 
 Implemented:
 
@@ -128,7 +128,62 @@ Implemented:
       validated to leave both sides non-empty, disjointness re-asserted
       before returning) and the public `assert_disjoint` for
       caller-built index sets.
-- `tests/quant/` — 132 tests total:
+  - `recipes/` — reproducible feature pipelines:
+    - `recipe.py` — `DatasetRef` (dataset name plus the
+      content-addressed SHA-256 the store computed), `FeatureSpec`
+      (output name, op, source, parameters — validated at construction
+      against the closed op list) and `FeatureRecipe` (schema version,
+      exactly one pinned input, features in execution order, a
+      `nan_policy` sentence recorded verbatim for rule 3). Canonical
+      JSON is sorted-key with no redundant whitespace, so the recipe's
+      SHA-256 identity does not depend on construction order;
+      `from_json` refuses unknown and missing fields;
+    - `ops.py` — the closed whitelist (`sma`, `ema`, `rolling_std`,
+      `rolling_zscore`, `rsi`, `log_returns`, `simple_returns`,
+      `lag`), each mapping to its golden-tested primitive; an op name
+      from a file never reaches `eval` or a dynamic import, and an
+      unknown one fails validation with the known names listed;
+    - `bars.py` — `BarBatch` (equal lengths, strictly increasing times,
+      finite columns, non-negative volume, validated at construction)
+      and `load_bar_batch`, which re-hashes the clean artefact and
+      refuses it if the file no longer matches its content-addressed
+      directory, requires an explicit version when several exist, and
+      refuses missing volume with a count instead of filling it;
+    - `execute.py` — three refusal-ordered steps: validate the recipe;
+      compare the dataset name and version pin against the batch (both
+      sides named in the error, so a recipe never silently runs on
+      other data); run features in declaration order where a source is
+      an input column or an *earlier* feature — forward references are
+      unrepresentable, and a chained source carrying warm-up NaN is
+      refused by feature name rather than computed through;
+  - `registry/` — `FeatureStore`, the §5 catalogue: entries keyed by
+    recipe hash holding `recipe.json`, `values.npy`, `times.npy` and
+    `meta.json` (dataset identity, shape, per-column NaN counts, and
+    SHA-256 over canonical little-endian bytes of both artefacts).
+    `meta.json` is written last and its presence is the completion
+    marker — an interrupted save is refused by name and repaired by a
+    re-save; re-saving a complete entry compares checksums and raises
+    on a determinism violation instead of overwriting; `verify`
+    cross-checks the record against the recipe (dataset pin, column
+    order, NaN counts); `load_recipe` re-hashes the file, so a recipe
+    edited after filing no longer hashes to its directory and is
+    refused.
+- `scripts/quant/benchmark_features.py` — measures execution on a real
+  stored dataset through the same `load_bar_batch` path research code
+  uses, and checks every timed run against the cold run by SHA-256 over
+  canonical bytes (exit 1 if any run differed). Measured on this
+  machine (Python 3.12.10, numpy 2.5.3, Windows 11): dataset
+  `kraken.xbtusd.1m` version `0a7dd69ff1c410758ac2d49083edae304c8de80be8badfaaeeb7996c270e29b0`,
+  661 rows × 9 features (126 NaN cells), cold run 2.766 ms, 50 timed
+  runs min/median/max 1.235/1.847/4.528 ms, **50/50 runs
+  SHA-256-identical** to the cold run (recipe hash
+  `b38da597c4543091ea49158d69e5fd51b874213a87f35aa3520d2919bc6ee48e`,
+  matrix hash
+  `0a6138722513abd4492b56508cb11a847d06df2c4410261ce8a7415eea5c1a45`).
+  The milliseconds are observations that vary between runs — rerun the
+  script to measure again; the reproduction count is what the harness
+  asserts, not what it assumes.
+- `tests/quant/` — 195 tests total:
   - `test_indicators.py` (46): golden values hand-derived in the test
     file (EMA as exact fractions `5/3, 23/9, 95/27, 365/81`; RSI's
     Wilder recursion worked through fraction by fraction; population
@@ -154,11 +209,33 @@ Implemented:
     test); a forward label's unobservable tail is NaN and appending data
     never revises a label that was already computable; plus returns
     golden values and the validation refusals.
+  - `test_recipes.py` (47): the canonical JSON is compared against a
+    string written out in the test byte for byte with its SHA-256
+    recomputed independently over those bytes; every meaningful change
+    changes the hash; execution is bit-identical across runs and leaves
+    the batch untouched; the version pin refuses a different dataset
+    version or name with both sides in the message; primitives' own
+    refusals travel up through the recipe unchanged; the loader's
+    artefact-hash check, missing-volume refusal, multi-version
+    refusal and path-escape refusal run against a store fixture the
+    test writes itself, so the suite never depends on `data/` existing;
+  - `test_registry.py` (16): round trip of every stored field;
+    reproduce-twice **through disk** (execute → save → execute → load,
+    all three bit-identical); identical record bytes across two store
+    roots; refusals for a wrong-recipe matrix, a determinism violation
+    (original entry shown untouched), a tampered `recipe.json`,
+    `values.npy` and `meta.json`, an incomplete entry (not listed,
+    load refused, re-save repairs), and malformed hashes; `verify`
+    catching what one file cannot contradict about itself (dataset
+    pin, column order, NaN counts); loaded arrays isolated from the
+    store in both directions.
 - The `quant` extra (NumPy, Pandas, Polars, SciPy, scikit-learn,
   statsmodels) installed in `.venv` per §2.
 
-Not started yet, all still Phase 5: `recipes/`, `registry/`,
-resampling/session-alignment helpers, and the measured benchmark.
+Not started yet, all still Phase 5: resampling/session-alignment
+helpers, §4's timestamped `label_time >= info_time` label assertion,
+and distribution fitting — named in §1's responsibility list but not an
+exit criterion in §7, so recorded as a gap rather than quietly dropped.
 The only other numeric helpers remain `@harsh-quant-os/shared`
 (`percentChange`, `safeDivide`, `roundTo`) for display purposes, with unit
 tests — explicitly **not** the quant engine.
