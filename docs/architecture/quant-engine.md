@@ -87,7 +87,7 @@ packages/quant/
 
 ---
 
-## 6. Current state (Phase 5, increment 2)
+## 6. Current state (Phase 5, increment 3)
 
 Implemented:
 
@@ -113,7 +113,22 @@ Implemented:
     `correlation_matrix` (Pearson over equally long columns; a constant
     column and unequal lengths refuse with the column named; one column
     returns `[[1.0]]`).
-- `tests/quant/` — 86 tests total:
+  - `transforms/` — the leakage-controlled research transforms:
+    - `returns.py` — `simple_returns`, `log_returns` (strictly positive
+      prices enforced; zero denominators refuse) kept aligned with the
+      input, and `forward_return`, a **label** whose last `horizon`
+      positions are NaN because those outcomes are not yet observable;
+    - `lag.py` — one-directional shifting: `out[i] = values[i-periods]`,
+      negative shifts refused by name (they would read the future),
+      zero refused (a no-op must not stand in for a real shift);
+    - `scaling.py` — `StandardScaler`, a frozen fit/transform whose
+      `fit` sees only the values passed and records `n`, so the sample
+      it was fitted on stays explicit;
+    - `splits.py` — `chronological_split` (time-ordered only, cut point
+      validated to leave both sides non-empty, disjointness re-asserted
+      before returning) and the public `assert_disjoint` for
+      caller-built index sets.
+- `tests/quant/` — 132 tests total:
   - `test_indicators.py` (46): golden values hand-derived in the test
     file (EMA as exact fractions `5/3, 23/9, 95/27, 365/81`; RSI's
     Wilder recursion worked through fraction by fraction; population
@@ -129,11 +144,21 @@ Implemented:
     rejected; its cumulative sum — a genuine random walk: not rejected)
     with threshold assertions rather than pinned library output; `acf`
     and the correlation matrix are compared against hand-worked values.
+  - `test_transforms.py` (46): the §4 leakage controls are asserted
+    mechanically — `lag` refuses a negative shift by name and matches
+    the hand-derived direction on golden values; the scaler's
+    statistics come from exactly its fit sample (and a full-sample fit
+    would differ), transforming future data cannot re-centre it, and the
+    fitted object is frozen; splits are checked with NumPy directly for
+    disjointness, completeness and time order (not via the helper under
+    test); a forward label's unobservable tail is NaN and appending data
+    never revises a label that was already computable; plus returns
+    golden values and the validation refusals.
 - The `quant` extra (NumPy, Pandas, Polars, SciPy, scikit-learn,
   statsmodels) installed in `.venv` per §2.
 
-Not started yet, all still Phase 5: `transforms/`, `recipes/`,
-`registry/`, the leakage split/label helpers, and the measured benchmark.
+Not started yet, all still Phase 5: `recipes/`, `registry/`,
+resampling/session-alignment helpers, and the measured benchmark.
 The only other numeric helpers remain `@harsh-quant-os/shared`
 (`percentChange`, `safeDivide`, `roundTo`) for display purposes, with unit
 tests — explicitly **not** the quant engine.

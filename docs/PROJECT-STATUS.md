@@ -118,10 +118,10 @@ defect.
   panel), the stored-bars chart with its table, the persisted watchlist and
   the multi-timeframe view all exist; increments 1–4 are delivered and
   observed in a real browser.
-- Quant / feature engine — Phase 5, in progress. The indicator library
-  and the statistical tests (stationarity, autocorrelation, correlation)
-  exist with golden tests; transforms, recipes and the feature store do
-  not yet.
+- Quant / feature engine — Phase 5, in progress. The indicator library,
+  the statistical tests (stationarity, autocorrelation, correlation) and
+  the leakage-controlled transforms exist with golden tests; recipes and
+  the feature store do not yet.
 - Backtesting engine — Phase 6
 - Strategy validation and walk-forward testing — Phase 7
 - AI research assistant — Phase 8
@@ -493,6 +493,43 @@ library — is delivered and validated on 2026-09-30:
   clean, `mypy` clean over 106 source files (was 95).
 - not started within Phase 5: `transforms/`, `recipes/`, `registry/`,
   the leakage split/label helpers, and the benchmark.
+
+**Increment 3 — transforms and the leakage controls — is delivered and
+validated on 2026-09-30:**
+
+- `src/harsh_quant_os/quant/transforms/`:
+  - `returns.py` — `simple_returns` and `log_returns`, aligned with the
+    input (position 0 NaN, documented), strictly positive prices and
+    nonzero denominators enforced by refusal; `forward_return`, a
+    **label** whose last `horizon` positions are NaN because those
+    outcomes have not happened yet — an unobservable label is NaN,
+    never guessed;
+  - `lag.py` — one-directional shifting (`out[i] = values[i-periods]`);
+    a negative shift would read the future and is refused **by name**,
+    and a zero shift is refused because a no-op must not stand in for a
+    real one;
+  - `scaling.py` — `StandardScaler`, a frozen fit/transform: `fit`
+    computes from exactly the values passed and records how many it
+    saw (`n`), and `transform` only applies the stored statistics, so
+    transforming future data cannot re-centre it;
+  - `splits.py` — `chronological_split`, time-ordered only (no shuffle
+    exists that could put a future row in training), cut validated to
+    leave both sides non-empty, disjointness re-asserted before
+    returning; `assert_disjoint`, public for caller-built index sets,
+    names the first shared index;
+- `tests/quant/test_transforms.py`: 46 tests — golden values worked out
+  by hand (dyadic returns `[0.5, -0.5, 1.0]`, `-0.25/0.0` two-bar
+  labels, mean 3 / variance 2 scaler, cut-at-8 split), and the §4
+  leakage properties asserted mechanically: lag direction, fit-sample
+  statistics (with a full-sample fit shown to differ), splits checked
+  with NumPy rather than the helper under test (disjoint, complete,
+  `max(train) < min(test)`), and a forward label that never revises a
+  previously computable value when data is appended;
+- battery: `pytest` **429 passed** + 1 skipped (was 383 at increment 2 —
+  +46 transforms), `ruff check` clean, `ruff format --check` clean
+  (157 files), `mypy` clean over 112 source files (was 106);
+- not started within Phase 5: `recipes/`, `registry/`, resampling and
+  session alignment, and the benchmark.
 
 Carried forward, none of it Phase 4: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and
