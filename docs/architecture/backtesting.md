@@ -54,13 +54,15 @@ A strategy cannot be marked `validated` without out-of-sample and
 walk-forward evidence attached. This is a product rule, not a guideline.
 
 Implementation status: **out-of-sample testing**, **walk-forward
-testing** and **parameter sensitivity** (rows 1-3) exist as of Phase 7
-increments 1-3 — `validation.py` (chronological cut, append-only
-access ledger, held-out evaluated once), `walkforward.py`
-(rolling/expanding windows, per-window selection, the aggregation
-defined in §9, and replay of every stored manifest) and
-`sensitivity.py` (the declared grid, every cell, adjacency counts,
-§9.4). Regime splits, multiple-testing adjustment and the
+testing**, **parameter sensitivity** and **regime analysis** (rows
+1-4) exist as of Phase 7 increments 1-4 — `validation.py`
+(chronological cut, append-only access ledger, held-out evaluated
+once), `walkforward.py` (rolling/expanding windows, per-window
+selection, the aggregation defined in §9, and replay of every stored
+manifest), `sensitivity.py` (the declared grid, every cell,
+adjacency counts, §9.4) and `regimes.py` (causal labels with
+declared thresholds, entry-time attribution, §9.5).
+Multiple-testing adjustment and the
 candidate/validated/rejected/archived workflow are **not
 implemented yet**; the look-ahead, leakage and survivorship rows are
 covered by the engine and Phase 5 checks described in §8.
@@ -133,16 +135,17 @@ directory remains the Phase 0 requirements record):
 | Chronological splits, the held-out-once ledger, train-slice selection          | `validation.py`       |
 | Walk-forward windows, per-window selection, the out-of-sample track, replay    | `walkforward.py`      |
 | The declared parameter grid, every cell, adjacency counts, surface replay      | `sensitivity.py`      |
+| Causal regime labels, entry-time attribution, the split and its honesty flags | `regimes.py`          |
 | `hqos backtest report`                                                        | `../cli.py`           |
 
 Every simulated order is evaluated by `ConfiguredRiskEvaluator`
 before it may fill — the same configured gate the paper-trading path
 will use. Reports are written to `research/reports/`, which Git
 ignores: a simulated result is an artefact of a run, never repository
-content. Phase 7 increments 1–3 added the data-separation and
-walk-forward layers, windowed replay (§9) and the parameter-sensitivity
-surface (§9.4); regime splits, deflated metrics, benchmarks/nulls and
-the promotion workflow are **not implemented**.
+content. Phase 7 increments 1–4 added the data-separation and
+walk-forward layers, windowed replay (§9), the parameter-sensitivity
+surface (§9.4) and the causal regime split (§9.5); deflated metrics,
+benchmarks/nulls and the promotion workflow are **not implemented**.
 
 ---
 
@@ -287,3 +290,39 @@ being true.
   follow from the stored cells. `replay_sensitivity` goes further
   and re-executes every cell, re-deriving each score and each
   cell's numbers exactly.
+
+### 9.5 Regime segmentation (regimes.py, increment 4)
+
+- **Labels are causal**: a bar's label is a function of that bar and
+  the trailing `window` bars behind it — never of the bars ahead.
+  Thresholds are *declared* inputs; a quantile of the whole sample
+  would read the future, so the built-ins take their thresholds as
+  arguments instead.
+- **Warm bars are `undefined`, their own segment**: until a full
+  trailing window exists there is no label to give, and those bars
+  are counted rather than folded into whatever regime follows them.
+- **The rule travels with the labels**: `RegimeLabels` carries the
+  human-readable rule beside the per-bar labels and `RegimeSplit`
+  keeps it — a split reported without the rule that produced it
+  would be a metric without its assumptions.
+- **Attribution is by entry**: a completed cycle belongs to the
+  regime in force when the position was *opened* — the decision
+  point. A trade can span regimes and its P&L is not split to
+  pretend otherwise; the position still open at the end is counted
+  under its entry regime and sits in no cycle's P&L (an unclosed
+  trade is neither win nor loss, exactly as §4 rules).
+- **The split is retrospective reporting, not selection**: one walk
+  of the run's own ledger (`trade_records`, the same reconstruction
+  `compute_metrics` reads), grouped by label. Labels covering a
+  different bar count, a cycle whose entry is not one of the run's
+  own bar times, a flat-ending run whose realised total the walk
+  cannot reproduce, and segments or splits that cannot account for
+  themselves are all refused.
+- A profitable split whose gains all entered under one regime
+  reports `regime_specific`: reported as regime-specific, not as
+  general (anti-overfitting §2.7).
+- The two built-ins — `volatility_regimes` (trailing population
+  stdev of close-to-close returns, the quant package's ddof=0
+  convention) and `trend_regimes` (trailing return against declared
+  up/down magnitudes) — are exact `Decimal`; any other causal labels
+  (liquidity included) may be supplied through `RegimeLabels`.

@@ -42,7 +42,7 @@
 | Dataset store + manifest    | `data/raw`, `data/clean`, `data/quarantine` written content-addressed and atomically; `datasets` carries quality status, version and storage path with three check constraints; provenance appended per acquisition |
 | Market-data adapter         | `KrakenProvider` — Kraken's public OHLC feed behind `HttpTransport` (stdlib client, no key, prices as decimal strings); paging, an unfinished candle and both observed error responses are handled explicitly, and an opt-in live test composes the whole path |
 | Ingestion job               | `hqos data ingest` — fetch → validate → store → register in one command; refuses (exit 1) and quarantines a batch validation rejects; database proved reachable before any network call |
-| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increments 1–3 add chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`), rolling/expanding walk-forward windows with the aggregated out-of-sample track, windowed manifest re-execution and full walk-forward replay (`walkforward.py`), and the declared parameter-sensitivity surface with its adjacency statistics and cell replay (`sensitivity.py`) |
+| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increments 1–4 add chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`), rolling/expanding walk-forward windows with the aggregated out-of-sample track, windowed manifest re-execution and full walk-forward replay (`walkforward.py`), the declared parameter-sensitivity surface with its adjacency statistics and cell replay (`sensitivity.py`), and causal regime segmentation with entry-time attribution and the regime-specific flag (`regimes.py`) |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
@@ -132,17 +132,17 @@ defect.
   the configured risk evaluator on every simulated order, the §3 run
   manifest with byte-identical reproduction, the §4 metric set and the
   §6 report all exist with golden tests; the Phase 6 exit criteria are
-  assessed met below. Regime-split results remain not implemented
-  (Phase 7); parameter-sensitivity surfaces exist as of Phase 7
-  increment 3.
+  assessed met below. Parameter-sensitivity surfaces and causal
+  regime splits exist as of Phase 7 increments 3-4.
 - Strategy validation and walk-forward testing — Phase 7, in progress.
-  Increments 1–3 (chronological splits, the held-out-once access
+  Increments 1–4 (chronological splits, the held-out-once access
   ledger, train-slice selection recording every variant, walk-forward
   windows with the documented aggregation, tamper-checked JSON
   evidence, windowed manifest re-execution, full replay of every
-  stored manifest, and the declared parameter-sensitivity surface
-  with every cell, adjacency counts and cell replay) exist with
-  golden tests; regime splits, deflated metrics,
+  stored manifest, the declared parameter-sensitivity surface with
+  every cell, adjacency counts and cell replay, and causal regime
+  segmentation with entry-time attribution and the regime-specific
+  flag) exist with golden tests; deflated metrics,
   benchmark/shuffled-signal nulls and the promotion workflow remain
   not implemented.
 - AI research assistant — Phase 8
@@ -727,10 +727,10 @@ delivered and validated on 2026-09-30:
   simulated order passes `ConfiguredRiskEvaluator` before it may
   fill.
 
-**Phase 7 (Strategy validation) is in progress.** Increments 1–3 —
-data separation, walk-forward, replayable windowed evidence and the
-parameter-sensitivity surface — are delivered and validated on
-2026-09-30:
+**Phase 7 (Strategy validation) is in progress.** Increments 1–4 —
+data separation, walk-forward, replayable windowed evidence, the
+parameter-sensitivity surface and regime segmentation — are
+delivered and validated on 2026-09-30:
 
 - **Increment 1 — splits, the held-out-once ledger, walk-forward**
   (`validation.py`, `walkforward.py`): a chronological train/held-out
@@ -824,13 +824,44 @@ parameter-sensitivity surface — are delivered and validated on
   (+9: the surface, its refusals, JSON tampering and replay tests);
   `ruff check`/`ruff format` clean, `mypy` clean (146 source files),
   prettier, eslint and `tsc` clean, vitest **132 passed**.
-- not started within Phase 7: regime splits,
+- **Increment 4 — regime segmentation** (`regimes.py`): causal
+  labels with *declared* thresholds — `volatility_regimes` (trailing
+  population stdev of close-to-close returns against a declared
+  level, the quant package's ddof=0 convention) and `trend_regimes`
+  (trailing return against declared up/down magnitudes) — each bar
+  carrying one non-empty label, with the warm period staying
+  `undefined` in its own segment instead of being folded into a
+  neighbour, and the rule itself travelling with the labels
+  (`RegimeLabels`) so a split can always say what it split by.
+  Attribution is by entry: a completed cycle belongs to the regime
+  in force when the position was opened (the decision point),
+  trades spanning regimes are not split to pretend otherwise, and
+  the position still open at the end is counted under its entry
+  regime while sitting in no cycle's P&L. The split reuses the one
+  ledger walk (`trade_records`, now the single implementation
+  behind `compute_metrics` too) and refuses: labels covering a
+  different bar count, a cycle entry that is not one of the run's
+  own bar times, a flat-ending run whose realised total the walk
+  cannot reproduce, and segments or splits that cannot account for
+  themselves. A profitable split whose gains all entered under one
+  regime reports `regime_specific` — regime-specific, not general
+  (anti-overfitting §2.7). Golden traces hand-computed: the ratio
+  bars' deviation sqrt(0.0003) ~ 0.01732 brackets the 0.015/0.025
+  thresholds; the golden losing trip (-12, entered at t2) lands in
+  t2's regime; a +18 single-regime profit is flagged.
+- battery after increment 4: `pytest` **642 passed** + 1 skipped
+  (+13: causal labelling, refusals, entry-time attribution, the
+  open position, regime-specific flag and self-accounting
+  refusals); `ruff check`/`ruff format` clean (194 files), `mypy`
+  clean (148 source files), prettier, eslint and `tsc` clean, vitest
+  **132 passed**.
+- not started within Phase 7:
   deflated/multiple-testing headline adjustment, benchmark and
   shuffled-signal nulls, and the candidate / validated / rejected /
   archived promotion workflow with its product rule (no `validated`
   without out-of-sample and walk-forward evidence attached).
 
-Not started as of Phase 7 increment 3: the rest of Phase 7 (above),
+Not started as of Phase 7 increment 4: the rest of Phase 7 (above),
 then Phase 8 (AI research).
 
 Carried forward, none of it Phase 6: nightly backup scheduling and where

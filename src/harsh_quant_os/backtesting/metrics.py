@@ -50,10 +50,13 @@ __all__ = [
     "CostStats",
     "DrawdownStats",
     "ExposureStats",
+    "RoundTrip",
     "RunMetrics",
+    "TradeRecords",
     "TradeStats",
     "VolatilityStats",
     "compute_metrics",
+    "trade_records",
 ]
 
 #: Seconds in the 365-day year the annualisation convention uses.
@@ -279,11 +282,49 @@ def _distribution(
 # ---------------------------------------------------------------------------
 
 
-def _round_trips(result: BacktestResult) -> tuple[list[Decimal], list[timedelta]]:
-    """Replay fills through the engine's ledger to split P&L by cycle.
+@dataclass(frozen=True, slots=True)
+class RoundTrip:
+    """One completed open-to-close cycle, with the times that made it.
 
-    Uses the very arithmetic the result's realised total was built
-    with, so trip P&Ls sum to the recorded total for flat-ending runs.
+    Attributes:
+        entry: Fill time that opened the cycle.
+        exit: Fill time that closed it.
+        holding: ``exit - entry``.
+        pnl: Realised P&L of the cycle, exact — the same ledger
+            arithmetic the run's realised total was built with.
+    """
+
+    entry: datetime
+    exit: datetime
+    holding: timedelta
+    pnl: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class TradeRecords:
+    """A result's cycles as the ledger reconstructed them.
+
+    Attributes:
+        completed: Every closed cycle, in the order they closed.
+        open_entry: The fill time that opened the position still held
+            at the run's final bar, or ``None`` when the run ended
+            flat. Its outcome is in no cycle's ``pnl`` — the metric
+            set never counts an unclosed trade as a win or a loss.
+    """
+
+    completed: tuple[RoundTrip, ...]
+    open_entry: datetime | None
+
+
+def trade_records(result: BacktestResult) -> TradeRecords:
+    """Replay fills through the engine's ledger, recording entry times.
+
+    One walk, one implementation: :func:`compute_metrics` and the
+    regime split read the same reconstruction, so they cannot drift
+    apart. Uses the very arithmetic the result's realised total was
+    built with, so completed cycles' P&Ls sum to the recorded total
+    for flat-ending runs (a run ending with the position open has an
+    unclosed cycle in ``open_entry`` instead).
 
     Raises:
         BacktestError: A FILLED order without a fill time, or a
@@ -293,8 +334,7 @@ def _round_trips(result: BacktestResult) -> tuple[list[Decimal], list[timedelta]
     ledger = Ledger(result.starting_capital)
     fills = sorted(result.filled, key=lambda order: order.fill_time or order.decision_time)
 
-    pnls: list[Decimal] = []
-    holdings: list[timedelta] = []
+    trips: list[RoundTrip] = []
     entry_time: datetime | None = None
     trip_pnl = _ZERO
     previous = ledger.quantity
@@ -324,15 +364,27 @@ def _round_trips(result: BacktestResult) -> tuple[list[Decimal], list[timedelta]
                         "a position closed with no recorded entry fill; round "
                         "trips cannot be reconstructed from this result"
                     )
-                pnls.append(trip_pnl)
-                holdings.append(at - entry_time)
+                trips.append(
+                    RoundTrip(
+                        entry=entry_time,
+                        exit=at,
+                        holding=at - entry_time,
+                        pnl=trip_pnl,
+                    )
+                )
                 trip_pnl = _ZERO
                 entry_time = at if now != 0 else None
         elif now != 0:
             entry_time = at
         previous = now
 
-    return pnls, holdings
+    return TradeRecords(completed=tuple(trips), open_entry=entry_time)
+
+
+def _round_trips(result: BacktestResult) -> tuple[list[Decimal], list[timedelta]]:
+    """The pair compute_metrics reads: cycle P&Ls and their holdings."""
+    records = trade_records(result)
+    return [trip.pnl for trip in records.completed], [trip.holding for trip in records.completed]
 
 
 def _assumptions() -> tuple[tuple[str, str], ...]:
