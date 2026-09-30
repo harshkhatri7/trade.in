@@ -103,8 +103,11 @@ The dev server binds to `WEB_HOST`/`WEB_PORT` (`127.0.0.1:3000` by default).
 | ------------------------------ | ----------------------------------------------------------- |
 | `tests/web/api-client.test.ts` | Paths, validation and the three distinct failure kinds      |
 | `tests/web/system-status.test.tsx` | Each state renders; no state claims a connection that did not happen |
-| `tests/web/dataset-browser.test.tsx` | Each state renders from the shared fixture; nulls stay `—`, provenance loads on selection |
+| `tests/web/dataset-browser.test.tsx` | Each state renders from the shared fixture; nulls stay `—`, provenance loads on selection; Follow round-trips through the watchlist panel; the multi-timeframe panel offers only stored timeframes |
 | `tests/web/dataset-bars.test.tsx` | The chart is stubbed (jsdom has no canvas): it receives converted numbers while the table keeps exact strings; every request state renders |
+| `tests/web/dataset-watchlist.test.tsx` | The panel renders only what it was given: exact metadata, `—` for nulls, names that left the directory kept and removable, shared request-state wording |
+| `tests/web/dataset-multi-timeframe.test.tsx` | Canonical timeframe order, buttons only where a dataset is stored, clicks open datasets by their real name, unplaceable datasets named |
+| `tests/web/use-watchlist.test.ts` | Storage honesty: corrupt/non-array reads as empty, dedupe, order, persistence, quota failure keeps working |
 | `tests/integration/api-web-flow.test.tsx` | Real API → real client → real DOM                 |
 
 Run them with `npm run test`.
@@ -114,7 +117,8 @@ Run them with `npm run test`.
 ## Not implemented
 
 Authentication UI (Phase 2, see [ADR-0003](../../docs/decisions/ADR-0003-authentication-deferred.md)),
-watchlists, multi-timeframe views, strategies, backtests, AI,
+strategies, backtests, AI,
 paper trading, live trading. Market data is shown read-only on
 `/datasets`; the chart there draws one requested window of stored bars —
-it is not a live or streaming feed.
+it is not a live or streaming feed. The watchlist and multi-timeframe
+panels are stored in this browser only — they do not sync anywhere.

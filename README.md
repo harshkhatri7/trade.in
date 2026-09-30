@@ -41,7 +41,7 @@ backtest engine and no trading.
 | Safety gates     | Implemented and tested               |
 | Database         | PostgreSQL + Alembic (Phase 2)       |
 | Market data      | Adapter, validation, store, manifest (Phase 3) |
-| Market terminal  | Dataset browser + stored-bars chart; no watchlist yet (Phase 4) |
+| Market terminal  | Dataset browser, stored-bars chart, watchlist, multi-timeframe views (Phase 4) |
 | Quant engine     | Not implemented (Phase 5)            |
 | Backtesting      | Not implemented (Phase 6)            |
 | Paper trading    | Not implemented (Phase 10)           |

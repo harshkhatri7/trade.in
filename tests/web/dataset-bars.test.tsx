@@ -10,7 +10,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 
 import type { DatasetBarsResponse } from '@harsh-quant-os/types';
 
@@ -103,23 +103,27 @@ describe('<DatasetBars />', () => {
     expect(chart.getAttribute('aria-label')).toContain('2 stored bars');
 
     // What the chart received: converted numbers on epoch seconds, because
-    // canvas geometry cannot be drawn from decimal strings.
-    expect(setDataMock).toHaveBeenCalledWith([
-      {
-        time: Math.floor(Date.parse('2026-09-01T00:00:00Z') / 1000),
-        open: 78563,
-        high: 78854.2,
-        low: 78562.9,
-        close: 78613.7,
-      },
-      {
-        time: Math.floor(Date.parse('2026-09-01T01:00:00Z') / 1000),
-        open: 78614.4,
-        high: 78772.6,
-        low: 78364.2,
-        close: 78382.1,
-      },
-    ]);
+    // canvas geometry cannot be drawn from decimal strings. The chart is
+    // built in a passive effect, so the assertion waits for it instead of
+    // racing the scheduler — the expected arguments are asserted in full.
+    await waitFor(() =>
+      expect(setDataMock).toHaveBeenCalledWith([
+        {
+          time: Math.floor(Date.parse('2026-09-01T00:00:00Z') / 1000),
+          open: 78563,
+          high: 78854.2,
+          low: 78562.9,
+          close: 78613.7,
+        },
+        {
+          time: Math.floor(Date.parse('2026-09-01T01:00:00Z') / 1000),
+          open: 78614.4,
+          high: 78772.6,
+          low: 78364.2,
+          close: 78382.1,
+        },
+      ]),
+    );
 
     // The table prints the stored strings unchanged: no rounding, and a
     // value that was converted to a number for the chart would print as

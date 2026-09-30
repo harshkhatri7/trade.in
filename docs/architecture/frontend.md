@@ -132,7 +132,23 @@ same way as everything else:
 
 - `app/datasets/page.tsx` — server component: page metadata and copy only;
 - `components/dataset-browser.tsx` — renders the directory and, once a
-  dataset is selected, its provenance panel;
+  dataset is selected, its provenance panel; owns the page's single
+  `useWatchlist()` call, so the directory's Follow toggles and the
+  watchlist panel below it always read and write one state;
+- `components/dataset-watchlist.tsx` — the "Watchlist" panel: followed
+  datasets with their stored metadata, names the directory no longer
+  carries marked "(not in directory)" and still removable, and the
+  directory's request state rendered with §2's shared wording;
+- `components/dataset-multi-timeframe.tsx` — the "Multi-timeframe views"
+  panel: every canonical timeframe chip per instrument, a button exactly
+  where a stored dataset matches (it opens that dataset by name), a
+  dashed non-interactive chip everywhere else, and a footnote naming any
+  dataset the grid cannot place;
+- `features/datasets/use-watchlist.ts` — `useWatchlist()`, the one
+  localStorage-backed list behind both the Follow toggles and the
+  watchlist panel: corrupt or non-array storage reads as an empty list,
+  hydration happens after mount so SSR renders nothing invented, and a
+  toggle before hydration cannot wipe a stored list;
 - `components/dataset-bars.tsx` — the "Stored bars" section inside that
   panel: a candlestick chart of the requested window plus a table of the
   same payload;
@@ -184,3 +200,21 @@ focusable region (`tabindex="0"`) so keyboard-only operators can read the
 rows below the fold. Because jsdom has no canvas, component tests stub
 `lightweight-charts` and assert the data handed to it; the rendered pixels
 are verified in a real browser.
+
+Rules the watchlist and multi-timeframe panels add:
+
+- a timeframe chip is interactive only where a stored dataset exists; the
+  rest are dashed spans marked "(not stored)" for screen readers — the
+  grid may show absence but never offer a link to nothing;
+- a dataset the grid cannot place (no instrument and/or timeframe) is
+  named in the footnote, never silently dropped;
+- the two panels render the directory's request state with §2's shared
+  vocabulary, so neither can read CONNECTED while the directory has not
+  answered;
+- the "not stored" chips carry the muted token at full opacity: an
+  `opacity-60` dimming was removed after axe-core measured 3.48:1 against
+  the raised surface (4.5:1 is required at 12 px);
+- the whole `/datasets` page — directory, both panels, open detail — was
+  rescanned with axe-core after increment 4: 0 violations, 44 checks
+  passed, and Lighthouse scored accessibility, best-practices and SEO
+  1.0 each with zero failures.

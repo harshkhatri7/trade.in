@@ -156,8 +156,9 @@ Run them with `npm run test:py` or `.\.venv\Scripts\python.exe -m pytest`.
 
 Orders, strategies, backtests, AI, paper trading, live trading. Market data
 is readable but not *terminal*: the dataset endpoints above are the whole
-API side of Phase 4 so far — the `/datasets` web page and its stored-bars
-chart consume them — and watchlists and multi-timeframe views are still
-the rest of Phase 4. There is no open registration either:
+API side of Phase 4 — the `/datasets` web page, its stored-bars chart,
+watchlist and multi-timeframe panels consume them (the watchlist itself
+lives in the browser, not in the API). There is no open registration
+either:
 accounts are created out of band with `hqos user create`. Live trading is
 disabled by configuration and cannot be enabled here.

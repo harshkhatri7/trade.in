@@ -115,8 +115,9 @@ defect.
   reasons and notes on the manifest row.
 - Market terminal **UI** — Phase 4, in progress. The read-only dataset API,
   the `/datasets` browser page (directory, quality status, provenance
-  panel) and the stored-bars chart with its table exist; no watchlist and
-  no multi-timeframe view has been built yet.
+  panel), the stored-bars chart with its table, the persisted watchlist and
+  the multi-timeframe view all exist; increments 1–4 are delivered and
+  observed in a real browser.
 - Quant / feature engine — Phase 5
 - Backtesting engine — Phase 6
 - Strategy validation and walk-forward testing — Phase 7
@@ -295,8 +296,72 @@ on 2026-09-29 with the repository at this commit:
   routes;
 - battery after the change: `pytest` 297 passed + 1 skipped, `ruff check`
   clean, `ruff format --check` clean (140 files), `mypy` clean (95
-  files), prettier, eslint and `tsc` clean, vitest **103 passed** (was 87
-  — +7 client tests, +9 component tests).
+  files), prettier, eslint and `tsc` clean, vitest **109 passed** (was
+  103 — +5 bars-panel tests, +1 contract-guard test), `npm run
+  build:web` prerendered `/`, `/_not-found` and `/datasets`.
+  
+**Increment 4 — watchlist & multi-timeframe — is delivered and observed**
+on 2026-09-30 with the repository at this commit:
+
+- `features/datasets/use-watchlist.ts`: a localStorage-persisted watchlist
+  hook (`useWatchlist`) that stores followed dataset names across reloads;
+  corrupt JSON, non-arrays and non-string entries are treated as an empty
+  list instead of throwing into a render; SSR-safe (initial state `null`,
+  then hydrated); `toggle` adds or removes a name — deduplicated, in
+  insertion order — and reads storage itself when state has not hydrated
+  yet, so a click before hydration cannot wipe a stored list; a quota
+  failure keeps the in-memory list working instead of crashing.
+- `components/dataset-watchlist.tsx`: a panel rendered in a two-column
+  grid with the multi-timeframe view, between the directory and the detail
+  panel. Followed datasets render with their stored metadata (instrument,
+  timeframe, row count, shortened version — `—` for anything never
+  recorded, never `0`); a followed name the directory no longer carries is
+  kept, marked "(not in directory)", and can still be removed; clicking a
+  row's name opens the same detail panel as a directory row and marks the
+  open dataset with `aria-current`. The panel renders the directory's
+  request state with the app-wide wording (`request-state.ts`), so it
+  never claims CONNECTED while the directory is loading or failed.
+- `components/dataset-multi-timeframe.tsx`: groups the directory by
+  instrument (first-appearance order) and renders **every** canonical
+  timeframe chip in `TIMEFRAMES` order (`tick | 1m | 5m | 15m | 30m | 1h |
+  4h | 1d | 1w | 1mo`). A chip is a button (`View {tf} of {instrument}`)
+  exactly where a stored dataset matches, and opens that dataset by its
+  real name; every other chip is a dashed, non-interactive span with an
+  sr-only "(not stored)" — the grid shows what is missing without
+  pretending it can be opened. Datasets that lack the instrument and/or
+  timeframe needed for the grid are named in a footnote rather than
+  dropped. Grouping is one top-level memo — no hooks inside render loops.
+- `apps/web/src/components/dataset-browser.tsx`: renders both panels
+  (sharing one `useWatchlist()` call, so the directory's "Follow" toggles
+  and the watchlist panel always agree), and each directory row carries a
+  Follow toggle with `aria-pressed` and accessible name
+  `Follow {dataset}`.
+- `tests/web/dataset-bars.test.tsx`: the chart's `setData` assertion now
+  waits with `waitFor` instead of racing the passive effect it asserts —
+  the same arguments, previously observed to flake on a cold worker start.
+- observed in a real browser against real uvicorn + the dev database with
+  three ingested datasets (`kraken.xbtusd.1m` 661 rows, `kraken.xbtusd.1h`
+  649 rows, `kraken.xbtusd.1d` 28 rows): Follow flipped `aria-pressed` and
+  the watchlist gained the row; after a reload the entry persisted; the
+  watchlist's name button opened the detail panel with the 200-bar chart
+  and the full SHA-256 on screen; the `1d` chip switched the detail panel
+  to `kraken.xbtusd.1d` and its real 28 bars loaded; Unfollow returned the
+  empty state, reset the directory toggle to `aria-pressed="false"`, and
+  wrote `[]` to storage; the page console held 0 errors and 0 warnings;
+- accessibility on `/datasets`: axe-core (wcag2a/aa, wcag21a/aa,
+  best-practice) **0 violations, 44 checks passed** after fixing a real
+  finding this increment introduced — `opacity-60` on the "not stored"
+  chips dropped their contrast to 3.48:1, so the class was removed (the
+  dashed border already signals absence); 4 contrast nodes were reported
+  `incomplete` (bordered elements axe cannot decide) and were verified by
+  token math instead: `#9aa7b8` on `#0a0c10` = 8.0:1 and on `#11151c` =
+  7.5:1, both above 4.5:1; Lighthouse on `/datasets`: accessibility,
+  best-practices and SEO **1.0 each with zero failures**;
+- battery after the change: `pytest` 297 passed + 1 skipped, `ruff check`
+  clean, `ruff format --check` clean (140 files), `mypy` clean (95
+  files), prettier, eslint and `tsc` clean, vitest **132 passed** (was
+  109 — +7 watchlist panel, +6 multi-timeframe panel, +8 hook, +2 browser
+  integration), `npm run build:web` compiled successfully.
 
 **Increment 3 — the stored-bars chart — is delivered and observed** on
 2026-09-29 with the repository at this commit:
@@ -339,15 +404,32 @@ on 2026-09-29 with the repository at this commit:
   MIT, 0 vulnerabilities).
 
 The ROADMAP's Phase 4 exit criterion — every number on screen traceable
-to a dataset version — is satisfied **by construction on the screens that
-exist**: each figure renders beside the artefact version it was read
-from, the full SHA-256 is on screen in the detail panel, and the chart
-prints the version of the payload it draws directly above itself. The
-criterion as a whole is nevertheless **recorded as unassessed**, not met:
-the watchlist and multi-timeframe views it speaks of do not exist, and a
-phase exit criterion is not judged on partial evidence. What remains of
-Phase 4: watchlists and multi-timeframe views. Phase 4 stops at its
-boundary.
+to a dataset version — was **recorded as unassessed** while the watchlist
+and multi-timeframe views the phase specifies did not exist, because a
+phase exit criterion is not judged on partial evidence. That evidence is
+no longer partial: with increments 1–4 all delivered, the criterion is
+assessed **on the full set of screens the phase specified** and is
+**met**, recorded 2026-09-30:
+
+- the directory table renders each row count beside that dataset's
+  version column;
+- the detail panel prints the full SHA-256 above every figure;
+- the chart prints the version of the payload it draws directly above
+  itself, and its table restates that payload's exact values;
+- the watchlist prints each followed dataset's row count and version
+  prefix on the same row, with the full version in the cell's `title`;
+- the multi-timeframe panel carries no dataset-derived numbers at all —
+  only timeframe labels and dataset identities.
+
+Counts that are local interface state (how many datasets are listed, how
+many are followed) are counts of what the UI itself holds, not values
+read from a dataset, and are excluded from this criterion on the same
+basis as in increments 1–3. The phase boundary itself follows AGENTS.md
+§2.9: Phase 4 stops here, and the next phase began only on the owner's
+explicit in-conversation instruction to continue through the roadmap —
+that instruction conflicts with §2.9's stop-at-boundary rule, and the
+conflict is disclosed in the session report rather than silently
+resolved.
 
 Carried forward, none of it Phase 4: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and

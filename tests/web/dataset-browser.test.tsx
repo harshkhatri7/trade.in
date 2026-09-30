@@ -56,9 +56,12 @@ function clientWith(overrides: Partial<ApiClient>): ApiClient {
 
 // Vitest runs without globals here, so React Testing Library cannot register
 // its own auto-cleanup. Without this, DOM from a previous test would leak into
-// the next one and make assertions pass or fail for the wrong reason.
+// the next one and make assertions pass or fail for the wrong reason. The
+// watchlist persists to localStorage, which outlives `cleanup()` inside this
+// file — it is cleared so no test inherits another test's follows.
 afterEach(() => {
   cleanup();
+  localStorage.clear();
 });
 
 describe('<DatasetBrowser />', () => {
@@ -71,7 +74,9 @@ describe('<DatasetBrowser />', () => {
 
     const directory = screen.getByRole('region', { name: 'Dataset directory' });
     expect(directory.getAttribute('data-state')).toBe('loading');
-    expect(screen.getByText('LOADING')).toBeTruthy();
+    // Scoped to the directory: the watchlist and multi-timeframe panels
+    // legitimately show their own state word for the same request.
+    expect(within(directory).getByText('LOADING')).toBeTruthy();
     // Nothing may appear as data before a validated payload arrives.
     expect(screen.queryByText('kraken.xbtusd.1h')).toBeNull();
     expect(screen.queryByText('649')).toBeNull();
@@ -132,7 +137,10 @@ describe('<DatasetBrowser />', () => {
 
     render(<DatasetBrowser client={client} />);
 
-    expect((await screen.findByText('ERROR')).textContent).toBe('ERROR');
+    // Scoped to the directory: the watchlist and multi-timeframe panels show
+    // their own state word for the same failed request.
+    const directory = screen.getByRole('region', { name: 'Dataset directory' });
+    expect((await within(directory).findByText('ERROR')).textContent).toBe('ERROR');
     expect(screen.getByText('API responded with 500 for /api/v1/datasets')).toBeTruthy();
     expect(screen.queryByText('CONNECTED')).toBeNull();
     expect(screen.queryByText('649')).toBeNull();
@@ -148,7 +156,10 @@ describe('<DatasetBrowser />', () => {
 
     render(<DatasetBrowser client={client} />);
 
-    expect((await screen.findByText('DISCONNECTED')).textContent).toBe('DISCONNECTED');
+    // Scoped to the directory: the watchlist and multi-timeframe panels show
+    // their own state word for the same failed request.
+    const directory = screen.getByRole('region', { name: 'Dataset directory' });
+    expect((await within(directory).findByText('DISCONNECTED')).textContent).toBe('DISCONNECTED');
     expect(screen.getByText(message)).toBeTruthy();
     expect(screen.queryByText('CONNECTED')).toBeNull();
   });
@@ -245,5 +256,64 @@ describe('<DatasetBrowser />', () => {
     expect(
       screen.getByRole('button', { name: 'kraken.xbtusd.1h' }).getAttribute('aria-pressed'),
     ).toBe('false');
+  });
+
+  it('follows a dataset into the watchlist and opens it from there', async () => {
+    const getDataset = vi.fn(() => Promise.resolve(DETAIL));
+    const client = clientWith({
+      getDatasets: () => Promise.resolve(DIRECTORY),
+      getDataset,
+      getDatasetBars: () => Promise.resolve(BARS),
+    });
+
+    render(<DatasetBrowser client={client} />);
+
+    await screen.findByText('2 dataset(s) listed.');
+
+    // Both panels are part of the page and follow the directory's state.
+    const watchlist = screen.getByRole('region', { name: 'Watchlist' });
+    const multi = screen.getByRole('region', { name: 'Multi-timeframe views' });
+    expect(watchlist.getAttribute('data-state')).toBe('connected');
+    expect(multi.getAttribute('data-state')).toBe('connected');
+    expect(within(watchlist).getByText(/No datasets followed yet/)).toBeTruthy();
+
+    // Follow from the directory row: the toggle reports pressed, and the
+    // watchlist panel below gains the row — one state, two controls.
+    const follow = screen.getByRole('button', { name: 'Follow kraken.xbtusd.1h' });
+    expect(follow.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(follow);
+    expect(follow.getAttribute('aria-pressed')).toBe('true');
+    expect(within(watchlist).getByText('kraken.xbtusd.1h')).toBeTruthy();
+
+    // Opening from the watchlist uses the same handler as a directory row.
+    fireEvent.click(within(watchlist).getByRole('button', { name: 'Open kraken.xbtusd.1h' }));
+    await screen.findByText('2 acquisition record(s), newest first.');
+    expect(getDataset).toHaveBeenCalledWith('kraken.xbtusd.1h', expect.anything());
+
+    // Unfollow from the watchlist: the row leaves and the directory toggle
+    // resets — both controls still report the same single state.
+    fireEvent.click(
+      within(watchlist).getByRole('button', { name: 'Remove kraken.xbtusd.1h from the watchlist' }),
+    );
+    expect(within(watchlist).getByText(/No datasets followed yet/)).toBeTruthy();
+    expect(follow.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('offers only the stored timeframe for an instrument in the multi-timeframe panel', async () => {
+    const client = clientWith({ getDatasets: () => Promise.resolve(DIRECTORY) });
+
+    render(<DatasetBrowser client={client} />);
+
+    await screen.findByText('2 dataset(s) listed.');
+
+    const multi = screen.getByRole('region', { name: 'Multi-timeframe views' });
+    // XBTUSD has exactly one stored timeframe in the fixture; every other
+    // canonical timeframe is shown but not offered as a link to nothing.
+    const open = within(multi).getByRole('button', { name: 'View 1h of XBTUSD' });
+    expect(open.textContent).toBe('1h');
+    expect(within(multi).queryByRole('button', { name: 'View 1d of XBTUSD' })).toBeNull();
+    expect(within(multi).getAllByText('(not stored)').length).toBeGreaterThan(0);
+    // The dataset that cannot be placed on the grid is named, not dropped.
+    expect(within(multi).getByText(/example\.pending\.1d/)).toBeTruthy();
   });
 });

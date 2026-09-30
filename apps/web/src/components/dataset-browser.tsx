@@ -30,7 +30,10 @@ import { defaultApiClient } from '../api-client';
 import { REQUEST_STATE_LABELS, REQUEST_STATE_TONES } from '../features/common/request-state';
 import { useDatasetDetail, useDatasetList } from '../features/datasets/use-datasets';
 import type { DatasetDetailState, DatasetListState } from '../features/datasets/use-datasets';
+import { useWatchlist } from '../features/datasets/use-watchlist';
 import { DatasetBars } from './dataset-bars';
+import { DatasetMultiTimeframe } from './dataset-multi-timeframe';
+import { DatasetWatchlist } from './dataset-watchlist';
 
 export interface DatasetBrowserProps {
   /** Injected in tests; production uses the configured default client. */
@@ -212,6 +215,9 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
   const list = useDatasetList(client);
   const [selected, setSelected] = useState<string | null>(null);
   const detail = useDatasetDetail(client, selected);
+  // One watchlist for the whole page: the directory's Follow buttons and the
+  // watchlist panel below read and write the same persisted state.
+  const [watchlist, toggleWatchlist] = useWatchlist();
   const datasets = list.kind === 'connected' ? list.response.datasets : [];
 
   return (
@@ -277,6 +283,9 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
                       <th scope="col" className="py-2 font-medium">
                         Acquired (UTC)
                       </th>
+                      <th scope="col" className="py-2 font-medium">
+                        Watchlist
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -319,6 +328,17 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
                             </span>
                           )}
                         </td>
+                        <td className="py-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleWatchlist(dataset.name)}
+                            aria-pressed={watchlist.includes(dataset.name)}
+                            aria-label={`Follow ${dataset.name}`}
+                            className="rounded-full border border-line px-2 py-0.5 text-xs uppercase tracking-[0.12em] text-muted hover:text-ink"
+                          >
+                            Follow
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -331,6 +351,20 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
             </div>
           ))}
       </section>
+
+      {/* Watchlist and multi-timeframe share the directory's request state:
+          neither may claim CONNECTED while the directory has not answered. */}
+      <div className="grid gap-8 lg:grid-cols-2">
+        <DatasetWatchlist
+          summaries={datasets}
+          listState={list.kind}
+          names={watchlist}
+          onToggle={toggleWatchlist}
+          selected={selected}
+          onSelect={setSelected}
+        />
+        <DatasetMultiTimeframe summaries={datasets} listState={list.kind} onSelect={setSelected} />
+      </div>
 
       {selected !== null && (
         <section
