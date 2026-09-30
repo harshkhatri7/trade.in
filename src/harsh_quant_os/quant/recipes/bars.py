@@ -1,20 +1,28 @@
-"""Loading stored bars into the executor's input batch.
+"""Loading stored bars: one verification boundary, two representations.
 
 The bridge from the data store (exact ``Decimal`` CSV, content-addressed
-directories) to float64 arrays the arithmetic runs on:
+directories) to what each consumer needs:
+
+- :func:`load_stored_bars` is the shared verification step — name
+  safety, version resolution, and the rest of this list; it keeps exact
+  ``Decimal`` bars and is what the backtest engine reads.
+- :func:`load_bar_batch` converts the same verified bars to float64
+  arrays for indicator arithmetic; the stored CSV stays exact on disk.
+
+Verification rules, applied to both:
 
 - **The version is recomputed, not trusted.** ``data/clean/<name>/`` is
-  keyed by the SHA-256 of the clean artefact bytes;
-  :func:`load_bar_batch` hashes the file again and refuses if the file
-  does not match its directory — a renamed or replaced artefact cannot
-  masquerade as the version a recipe pinned.
+  keyed by the SHA-256 of the clean artefact bytes; the loader hashes
+  the file again and refuses if the file does not match its directory —
+  a renamed or replaced artefact cannot masquerade as the version a
+  recipe pinned.
 - **Missing volume is refused, not filled.** ``Bar.volume`` may be
   ``None`` (the provider reported none); this build never invents one,
-  so a dataset with holes in its volume column cannot back a volume
-  feature and says so (quant-engine.md §3 rule 3).
+  so a dataset with holes in its volume column is refused with a count
+  (quant-engine.md §3 rule 3).
 - **Nothing is resampled or reordered.** Bars load in stored order and
-  the batch requires strictly increasing times, so every downstream
-  right-aligned window lines up with real chronology.
+  :class:`BarBatch` requires strictly increasing times, so every
+  downstream right-aligned window lines up with real chronology.
 
 :class:`BarBatch` validates at construction like every other quant
 boundary: an invalid batch raises :class:`InvalidSeries` before a
@@ -31,11 +39,12 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from harsh_quant_os.data.providers import Bar
 from harsh_quant_os.data.store import read_bars
 from harsh_quant_os.quant.recipes.recipe import RecipeError
 from harsh_quant_os.quant.series import InvalidSeries
 
-__all__ = ["BarBatch", "load_bar_batch"]
+__all__ = ["BarBatch", "load_bar_batch", "load_stored_bars"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,8 +138,13 @@ class BarBatch:
         return columns[name]
 
 
-def load_bar_batch(root: Path, name: str, *, version: str | None = None) -> BarBatch:
-    """Load a stored clean dataset under ``root`` as a :class:`BarBatch`.
+def load_stored_bars(root: Path, name: str, *, version: str | None = None) -> tuple[str, list[Bar]]:
+    """Resolve, verify and read one stored clean artefact as bars.
+
+    The single verification boundary for the content-addressed store,
+    shared by :func:`load_bar_batch` (which converts to float64) and
+    the backtest engine's data loader (which keeps exact ``Decimal``
+    prices). Same refusal list for every caller:
 
     Args:
         root: The data root (the directory holding ``clean/``).
@@ -141,9 +155,9 @@ def load_bar_batch(root: Path, name: str, *, version: str | None = None) -> BarB
             one is an error rather than a guess about which is current.
 
     Returns:
-        The batch, with ``version`` recomputed from the artefact bytes
-        and checked against the directory the store content-addressed it
-        into.
+        ``(version, bars)`` — the content-addressed version, recomputed
+        from the artefact bytes and checked against the directory the
+        store hashed them into, and the bars in stored order.
 
     Raises:
         RecipeError: The name is not a plain directory name; no such
@@ -186,6 +200,36 @@ def load_bar_batch(root: Path, name: str, *, version: str | None = None) -> BarB
     bars = read_bars(bars_path)
     if not bars:
         raise RecipeError(f"dataset {name!r} version {version} contains no bars")
+
+    volumes = [bar.volume for bar in bars if bar.volume is not None]
+    if len(volumes) != len(bars):
+        absent = len(bars) - len(volumes)
+        raise RecipeError(
+            f"{absent} of {len(bars)} bars in {name!r} have no volume; a stored dataset "
+            "carries a real volume column and this build never invents one "
+            "(quant-engine.md section 3)"
+        )
+
+    return version, bars
+
+
+def load_bar_batch(root: Path, name: str, *, version: str | None = None) -> BarBatch:
+    """Load a stored clean dataset under ``root`` as a :class:`BarBatch`.
+
+    Resolves and verifies the artefact through
+    :func:`load_stored_bars` (same refusals, documented there), then
+    converts the exact stored values to ``int64``/``float64`` arrays for
+    indicator arithmetic — the stored CSV stays exact on disk.
+
+    Returns:
+        The batch, pinned to the recomputed content-addressed version.
+
+    Raises:
+        RecipeError: Anything :func:`load_stored_bars` refuses, or a bar
+        lacks volume at this layer's own check (both refuse; neither
+        fills).
+    """
+    version, bars = load_stored_bars(root, name, version=version)
 
     volumes = [float(bar.volume) for bar in bars if bar.volume is not None]
     if len(volumes) != len(bars):

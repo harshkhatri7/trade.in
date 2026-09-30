@@ -24,7 +24,7 @@ Saving, listing and verifying executed recipes is the registry's job
 
 from __future__ import annotations
 
-from harsh_quant_os.quant.recipes.bars import BarBatch, load_bar_batch
+from harsh_quant_os.quant.recipes.bars import BarBatch, load_bar_batch, load_stored_bars
 from harsh_quant_os.quant.recipes.execute import FeatureMatrix, execute
 from harsh_quant_os.quant.recipes.ops import BAR_COLUMNS, OPS, OpSpec
 from harsh_quant_os.quant.recipes.recipe import (
@@ -48,4 +48,5 @@ __all__ = [
     "RecipeError",
     "execute",
     "load_bar_batch",
+    "load_stored_bars",
 ]
