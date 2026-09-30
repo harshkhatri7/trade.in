@@ -106,6 +106,13 @@ from harsh_quant_os.backtesting.report import (
     cost_sensitivity,
     wilson_interval,
 )
+from harsh_quant_os.backtesting.sensitivity import (
+    SENSITIVITY_VERSION,
+    SensitivityCell,
+    SensitivitySurface,
+    parameter_sensitivity,
+    replay_sensitivity,
+)
 from harsh_quant_os.backtesting.strategy import (
     DecisionContext,
     HistoryView,
@@ -143,6 +150,7 @@ __all__ = [
     "ENDING_EQUITY",
     "MANIFEST_VERSION",
     "NEXT_BAR_OPEN",
+    "SENSITIVITY_VERSION",
     "SUMMARY_VERSION",
     "AccessLedger",
     "BacktestConfig",
@@ -175,6 +183,8 @@ __all__ = [
     "RunMetrics",
     "SelectionObjective",
     "SelectionTrace",
+    "SensitivityCell",
+    "SensitivitySurface",
     "SlippageModel",
     "Strategy",
     "TradeStats",
@@ -193,7 +203,9 @@ __all__ = [
     "load_backtest_data",
     "manifest_from_json",
     "manifest_to_json",
+    "parameter_sensitivity",
     "parse_decimal",
+    "replay_sensitivity",
     "replay_walk_forward",
     "run_backtest",
     "run_from_manifest",

@@ -42,7 +42,7 @@
 | Dataset store + manifest    | `data/raw`, `data/clean`, `data/quarantine` written content-addressed and atomically; `datasets` carries quality status, version and storage path with three check constraints; provenance appended per acquisition |
 | Market-data adapter         | `KrakenProvider` — Kraken's public OHLC feed behind `HttpTransport` (stdlib client, no key, prices as decimal strings); paging, an unfinished candle and both observed error responses are handled explicitly, and an opt-in live test composes the whole path |
 | Ingestion job               | `hqos data ingest` — fetch → validate → store → register in one command; refuses (exit 1) and quarantines a batch validation rejects; database proved reachable before any network call |
-| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increments 1–2 add chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`), rolling/expanding walk-forward windows with the aggregated out-of-sample track, windowed manifest re-execution and full walk-forward replay (`walkforward.py`) |
+| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increments 1–3 add chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`), rolling/expanding walk-forward windows with the aggregated out-of-sample track, windowed manifest re-execution and full walk-forward replay (`walkforward.py`), and the declared parameter-sensitivity surface with its adjacency statistics and cell replay (`sensitivity.py`) |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
@@ -132,16 +132,19 @@ defect.
   the configured risk evaluator on every simulated order, the §3 run
   manifest with byte-identical reproduction, the §4 metric set and the
   §6 report all exist with golden tests; the Phase 6 exit criteria are
-  assessed met below. Regime-split results and parameter-sensitivity
-  surfaces remain not implemented (Phase 7).
+  assessed met below. Regime-split results remain not implemented
+  (Phase 7); parameter-sensitivity surfaces exist as of Phase 7
+  increment 3.
 - Strategy validation and walk-forward testing — Phase 7, in progress.
-  Increments 1–2 (chronological splits, the held-out-once access
+  Increments 1–3 (chronological splits, the held-out-once access
   ledger, train-slice selection recording every variant, walk-forward
   windows with the documented aggregation, tamper-checked JSON
-  evidence, windowed manifest re-execution and full replay of every
-  stored manifest) exist with golden tests; parameter sensitivity,
-  regime splits, deflated metrics, benchmark/shuffled-signal nulls and
-  the promotion workflow remain not implemented.
+  evidence, windowed manifest re-execution, full replay of every
+  stored manifest, and the declared parameter-sensitivity surface
+  with every cell, adjacency counts and cell replay) exist with
+  golden tests; regime splits, deflated metrics,
+  benchmark/shuffled-signal nulls and the promotion workflow remain
+  not implemented.
 - AI research assistant — Phase 8
 - Risk engine — Phase 9
 - Paper trading — Phase 10
@@ -724,9 +727,10 @@ delivered and validated on 2026-09-30:
   simulated order passes `ConfiguredRiskEvaluator` before it may
   fill.
 
-**Phase 7 (Strategy validation) is in progress.** Increments 1–2 —
-data separation, walk-forward and replayable windowed evidence — are
-delivered and validated on 2026-09-30:
+**Phase 7 (Strategy validation) is in progress.** Increments 1–3 —
+data separation, walk-forward, replayable windowed evidence and the
+parameter-sensitivity surface — are delivered and validated on
+2026-09-30:
 
 - **Increment 1 — splits, the held-out-once ledger, walk-forward**
   (`validation.py`, `walkforward.py`): a chronological train/held-out
@@ -791,13 +795,42 @@ delivered and validated on 2026-09-30:
   replay/evidence tests); `ruff check`/`ruff format` clean (190
   files), `mypy` clean (144 files), prettier, eslint and `tsc`
   clean, vitest **132 passed**.
-- not started within Phase 7: parameter sensitivity, regime splits,
+- **Increment 3 — the parameter-sensitivity surface**
+  (`sensitivity.py`): the grid is declared up front
+  (`parameter -> ordered distinct values`, read in the mapping's own
+  order; cells are the cartesian product, last axis varying fastest),
+  so the cell count *is* the multiple-testing denominator (§2.4 of
+  anti-overfitting) and cannot be grown after seeing the data; every
+  cell is a full run (fresh strategy, fresh risk evaluator, §3
+  manifest, exact numbers) over the same pinned slice, with the
+  declared value strings reaching the evidence — a builder that
+  ignores an axis yields two identical manifests and is refused as
+  "one cell counted twice". The surface records the best cell beside
+  itself (index plus ties), sign counts, the exact score range, and
+  structural adjacency (neighbours differ in one axis by one step;
+  pairs and agreeing-pair counts, never a score). Stored canonical
+  JSON refuses wrong kind/version, edited honesty notes, altered
+  `run_id`s, manifests pinning other data or bounds, and any stored
+  statistic that does not follow from the stored cells;
+  `replay_sensitivity` re-executes every cell and re-derives each
+  score and each cell's numbers, failing closed at the first
+  mismatch (different objective, score that does not follow, numbers
+  that do not follow, a builder that is not the recorded strategy).
+  Golden trace (zero costs on the golden bars, axes threshold
+  (100, 105) x target (2, 3)): scores 988 / 982 / 1000 / 1000,
+  best cell 2 tied with cell 3, signs (-, -, 0, 0), adjacency 4
+  pairs of which 2 agree — all hand-computed in the tests.
+- battery after increment 3: `pytest` **629 passed** + 1 skipped
+  (+9: the surface, its refusals, JSON tampering and replay tests);
+  `ruff check`/`ruff format` clean, `mypy` clean (146 source files),
+  prettier, eslint and `tsc` clean, vitest **132 passed**.
+- not started within Phase 7: regime splits,
   deflated/multiple-testing headline adjustment, benchmark and
   shuffled-signal nulls, and the candidate / validated / rejected /
   archived promotion workflow with its product rule (no `validated`
   without out-of-sample and walk-forward evidence attached).
 
-Not started as of Phase 7 increment 2: the rest of Phase 7 (above),
+Not started as of Phase 7 increment 3: the rest of Phase 7 (above),
 then Phase 8 (AI research).
 
 Carried forward, none of it Phase 6: nightly backup scheduling and where

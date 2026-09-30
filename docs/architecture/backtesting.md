@@ -53,13 +53,14 @@ model, slippage model, capital, and the limitations that apply.
 A strategy cannot be marked `validated` without out-of-sample and
 walk-forward evidence attached. This is a product rule, not a guideline.
 
-Implementation status: **out-of-sample testing** and **walk-forward
-testing** (rows 1-2) exist as of Phase 7 increments 1-2 —
-`validation.py` (chronological cut, append-only access ledger,
-held-out evaluated once) and `walkforward.py` (rolling/expanding
-windows, per-window selection, the aggregation defined in §9, and
-replay of every stored manifest). Parameter sensitivity, regime
-splits, multiple-testing adjustment and the
+Implementation status: **out-of-sample testing**, **walk-forward
+testing** and **parameter sensitivity** (rows 1-3) exist as of Phase 7
+increments 1-3 — `validation.py` (chronological cut, append-only
+access ledger, held-out evaluated once), `walkforward.py`
+(rolling/expanding windows, per-window selection, the aggregation
+defined in §9, and replay of every stored manifest) and
+`sensitivity.py` (the declared grid, every cell, adjacency counts,
+§9.4). Regime splits, multiple-testing adjustment and the
 candidate/validated/rejected/archived workflow are **not
 implemented yet**; the look-ahead, leakage and survivorship rows are
 covered by the engine and Phase 5 checks described in §8.
@@ -131,16 +132,17 @@ directory remains the Phase 0 requirements record):
 | The reference strategy                                                        | `reference.py`        |
 | Chronological splits, the held-out-once ledger, train-slice selection          | `validation.py`       |
 | Walk-forward windows, per-window selection, the out-of-sample track, replay    | `walkforward.py`      |
+| The declared parameter grid, every cell, adjacency counts, surface replay      | `sensitivity.py`      |
 | `hqos backtest report`                                                        | `../cli.py`           |
 
 Every simulated order is evaluated by `ConfiguredRiskEvaluator`
 before it may fill — the same configured gate the paper-trading path
 will use. Reports are written to `research/reports/`, which Git
 ignores: a simulated result is an artefact of a run, never repository
-content. Phase 7 increment 1 added the data-separation and
-walk-forward layers (§9); parameter sensitivity, regime splits,
-deflated metrics, benchmarks/nulls and the promotion workflow are
-**not implemented**.
+content. Phase 7 increments 1–3 added the data-separation and
+walk-forward layers, windowed replay (§9) and the parameter-sensitivity
+surface (§9.4); regime splits, deflated metrics, benchmarks/nulls and
+the promotion workflow are **not implemented**.
 
 ---
 
@@ -253,3 +255,35 @@ being true.
   and the next to fill on means each train and test slice needs at
   least two bars, so `walk_forward` refuses shorter layouts up
   front instead of failing deep inside a run.
+
+### 9.4 The parameter-sensitivity surface (sensitivity.py, increment 3)
+
+- The grid is **declared, not discovered**: axes are given up front
+  (`parameter -> ordered distinct values`, read in the mapping's own
+  order) and the surface is their cartesian product, last axis
+  varying fastest. The cell count therefore *is* the
+  multiple-testing denominator (anti-overfitting §2.4) — it cannot
+  be quietly grown after seeing the data, and a surface whose cells
+  do not match its declared grid is refused.
+- Declared values are the **strings that reach the evidence**:
+  `build` receives the exact declared strings, and the manifest
+  records what `strategy.describe()` made of them. A builder that
+  ignores an axis produces two identical manifests and is refused —
+  a variation that never reaches the run is one cell counted twice.
+- Every cell is a **full run**: fresh strategy, fresh risk
+  evaluator, §3 manifest, exact-decimal numbers, the same slice of
+  the same pinned dataset. The best cell is reported *beside* the
+  surface (index plus `best_tied`), never instead of it.
+- **Adjacency is structural**: neighbours differ in exactly one
+  axis by one step (product-order strides, each pair counted once).
+  Agreement is reported as two counts over those pairs — pairs and
+  agreeing pairs — not as a score: a spike between two losers stays
+  one cell, and the counts say so.
+- The stored surface (canonical JSON) refuses: wrong kind/version,
+  edited honesty notes, a manifest whose `run_id` no longer matches
+  its payload, manifests pinning other data or other bounds, two
+  cells sharing one manifest, and any stored statistic (best,
+  ties, sign counts, score range, adjacency counts) that does not
+  follow from the stored cells. `replay_sensitivity` goes further
+  and re-executes every cell, re-deriving each score and each
+  cell's numbers exactly.
