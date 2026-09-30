@@ -39,6 +39,19 @@ The pieces:
 - :mod:`~harsh_quant_os.backtesting.walkforward` — Phase 7's
   walk-forward: per-window selection with per-run manifests and an
   aggregated out-of-sample track stored as replayable JSON.
+- :mod:`~harsh_quant_os.backtesting.sensitivity` — Phase 7's
+  parameter-sensitivity surface: the declared grid, every cell,
+  adjacency counts, and a replayable JSON that refuses statistics
+  which do not follow from its cells.
+- :mod:`~harsh_quant_os.backtesting.regimes` — Phase 7's regime
+  segmentation: causal labels with declared thresholds, entry-time
+  attribution, and the regime-specific flag.
+- :mod:`~harsh_quant_os.backtesting.benchmark` — the §2.6 passive
+  benchmark: same first fill opportunity, same cost models, same
+  marking, assumptions beside the numbers.
+- :mod:`~harsh_quant_os.backtesting.null` — the §2.6 shuffled-signal
+  null: the same signals re-timed by a recorded seed, with counts
+  reported as counts rather than as significance.
 
 Window coverage (methodology §5's data-side check) is
 :func:`~harsh_quant_os.backtesting.data.window_coverage`: missing bars
@@ -54,6 +67,7 @@ split/ledger/walk-forward refusals.
 
 from __future__ import annotations
 
+from harsh_quant_os.backtesting.benchmark import PassiveBenchmark, passive_benchmark
 from harsh_quant_os.backtesting.costs import (
     BpsCommission,
     CommissionModel,
@@ -101,6 +115,7 @@ from harsh_quant_os.backtesting.metrics import (
     compute_metrics,
     trade_records,
 )
+from harsh_quant_os.backtesting.null import ShuffledNull, shuffle_null
 from harsh_quant_os.backtesting.reference import CloseThreshold, parse_decimal
 from harsh_quant_os.backtesting.regimes import (
     UNDEFINED,
@@ -192,6 +207,7 @@ __all__ = [
     "OrderRecord",
     "OrderStatus",
     "OutOfSampleNumbers",
+    "PassiveBenchmark",
     "RegimeLabels",
     "RegimeSegment",
     "RegimeSplit",
@@ -202,6 +218,7 @@ __all__ = [
     "SelectionTrace",
     "SensitivityCell",
     "SensitivitySurface",
+    "ShuffledNull",
     "SlippageModel",
     "Strategy",
     "TradeRecords",
@@ -223,11 +240,13 @@ __all__ = [
     "manifest_to_json",
     "parameter_sensitivity",
     "parse_decimal",
+    "passive_benchmark",
     "replay_sensitivity",
     "replay_walk_forward",
     "run_backtest",
     "run_from_manifest",
     "select_on_train",
+    "shuffle_null",
     "split_by_regime",
     "trade_records",
     "train_test_split",

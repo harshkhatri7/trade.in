@@ -136,16 +136,19 @@ directory remains the Phase 0 requirements record):
 | Walk-forward windows, per-window selection, the out-of-sample track, replay    | `walkforward.py`      |
 | The declared parameter grid, every cell, adjacency counts, surface replay      | `sensitivity.py`      |
 | Causal regime labels, entry-time attribution, the split and its honesty flags | `regimes.py`          |
+| The same-universe passive reference: first fill, fixed-point sizing, identities | `benchmark.py`        |
+| The seeded shuffled-signal null: capture, permutation, counts reported as counts | `null.py`             |
 | `hqos backtest report`                                                        | `../cli.py`           |
 
 Every simulated order is evaluated by `ConfiguredRiskEvaluator`
 before it may fill — the same configured gate the paper-trading path
 will use. Reports are written to `research/reports/`, which Git
 ignores: a simulated result is an artefact of a run, never repository
-content. Phase 7 increments 1–4 added the data-separation and
+content. Phase 7 increments 1–5 added the data-separation and
 walk-forward layers, windowed replay (§9), the parameter-sensitivity
-surface (§9.4) and the causal regime split (§9.5); deflated metrics,
-benchmarks/nulls and the promotion workflow are **not implemented**.
+surface (§9.4), the causal regime split (§9.5) and the benchmark and
+shuffled-signal null (§9.6); deflated metrics and the promotion
+workflow are **not implemented**.
 
 ---
 
@@ -326,3 +329,40 @@ being true.
   convention) and `trend_regimes` (trailing return against declared
   up/down magnitudes) — are exact `Decimal`; any other causal labels
   (liquidity included) may be supplied through `RegimeLabels`.
+
+### 9.6 Benchmarks and nulls (benchmark.py, null.py, increment 5)
+
+- **The passive benchmark is a fixed rule, not a strategy**: it
+  decides nothing (no look-ahead to guard, no risk gate to pass),
+  fills on the window's second bar's open — the first price any
+  strategy can act on — with the run's own slippage applied by the
+  model's own method, sizes the capital by a fixed point of
+  `notional + commission(notional) = capital` (refused outright if
+  the model would eat the capital or never settle) so the cash
+  residue can never go negative, and marks to the final close with
+  no exit fee: the same marking the engine gives an open position,
+  so neither side of the comparison pays an exit the other does not.
+  Long only — a short reference would need borrow costs this engine
+  does not model, and none is invented. Its dataclass re-derives the
+  spend identity, the ending identity and the net return from its
+  own fields on construction, and carries the assumptions beside the
+  numbers (§5's rule).
+- **The null re-times the signals, nothing else**: one capture run
+  records the declared strategy's decision per bar (strategies are
+  pure by contract — two runs decide identically), and each trial
+  permutes that exact tuple across the bars and runs it through the
+  engine as an exogenous-signal strategy with a fresh evaluator,
+  same data, same config, same costs. The seed is explicit and
+  required — there is no default — and carried in the report,
+  because randomness that was not recorded cannot be audited; the
+  permutation is drawn from the seeded generator's stable
+  `random()` values under a stable sort, so
+  `(seed, trials, bar count)` replays it exactly.
+- **The report counts, it does not conclude**: every trial's score
+  is kept in trial order (no "best trial" view), and
+  `extreme_fraction` is the count of trials whose score matched or
+  beat the actual (ties counted) over the trials — a plain count,
+  never a p-value and never the probability that the strategy has
+  no edge. A value near 1 is consistent with the timing carrying
+  nothing, which is what anti-overfitting §2.6 asks the reader to
+  consider.
