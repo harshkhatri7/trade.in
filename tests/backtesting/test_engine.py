@@ -53,8 +53,10 @@ from harsh_quant_os.backtesting import (
     run_backtest,
 )
 from harsh_quant_os.backtesting.data import load_backtest_data
+from harsh_quant_os.config import Settings
 from harsh_quant_os.data.providers import Bar
 from harsh_quant_os.quant.recipes.recipe import RecipeError
+from harsh_quant_os.safety import ConfiguredRiskEvaluator
 from harsh_quant_os.safety.risk import RiskEvaluation, RiskEvaluator
 from tests.quant.test_recipes import GOOD_ROWS, _csv_bytes, _write_store
 
@@ -151,7 +153,13 @@ class ApproveAll:
         self.calls = 0
 
     def evaluate(
-        self, *, decision_time: datetime, delta: Decimal, price: Decimal, equity: Decimal
+        self,
+        *,
+        decision_time: datetime,
+        position: Decimal,
+        delta: Decimal,
+        price: Decimal,
+        equity: Decimal,
     ) -> RiskEvaluation:
         self.calls += 1
         return RiskEvaluation.allow()
@@ -161,7 +169,13 @@ class RefuseSells:
     """Risk double: refuses any order that reduces a long position."""
 
     def evaluate(
-        self, *, decision_time: datetime, delta: Decimal, price: Decimal, equity: Decimal
+        self,
+        *,
+        decision_time: datetime,
+        position: Decimal,
+        delta: Decimal,
+        price: Decimal,
+        equity: Decimal,
     ) -> RiskEvaluation:
         if delta < 0:
             return RiskEvaluation.refuse("sell side disabled by test configuration")
@@ -437,6 +451,34 @@ def test_the_risk_protocol_is_satisfied_by_the_engine_itself() -> None:
     # contract is a Protocol — the engine depends on the shape, not a
     # concrete class (risk-engine.md §1's seam).
     assert isinstance(ApproveAll(), RiskEvaluator)
+
+
+def test_configured_risk_evaluator_approves_small_orders_end_to_end() -> None:
+    # The real evaluator over the real Settings defaults: the golden
+    # run's largest resulting notional is ~210 against a 100k limit.
+    risk = ConfiguredRiskEvaluator(Settings.load(_env_file=None))
+    result = run_backtest(_data(), Threshold(), _config(), risk=risk)
+    assert len(result.filled) == 2
+    assert result.rejected == ()
+
+
+def test_a_tight_position_limit_refuses_the_entry_in_the_engine() -> None:
+    risk = ConfiguredRiskEvaluator(Settings.load(_env_file=None, risk_max_position_notional=100.0))
+    result = run_backtest(_data(), Threshold(), _config(), risk=risk)
+
+    # Bar1 (close 104) and bar2 (close 103) both attempt the entry
+    # while still flat — 2 * ~104 = ~208 > 100 refuses both, each with
+    # its own record. Bar3's target-0 equals the still-flat position,
+    # a zero delta that never reaches risk. Nothing traded, and the
+    # notes say why.
+    assert [order.status for order in result.orders] == [
+        OrderStatus.REJECTED,
+        OrderStatus.REJECTED,
+    ]
+    assert all("RISK_MAX_POSITION_NOTIONAL" in order.note for order in result.orders)
+    assert result.ending_quantity == Decimal(0)
+    assert result.ending_cash == Decimal(1000)
+    assert result.ending_equity == Decimal(1000)
 
 
 # ---------------------------------------------------------------------------

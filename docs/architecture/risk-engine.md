@@ -1,7 +1,8 @@
 # Risk engine architecture
 
-**Phase:** 0 — Foundation. The **trade gate** exists and is tested; the full
-risk engine is Phase 9.
+**Phase:** 0 — Foundation, extended in Phase 6 with the pre-trade risk
+evaluation seam (`safety/risk.py`). The **trade gate** exists and is
+tested; the full risk engine is Phase 9.
 
 ---
 
@@ -43,8 +44,31 @@ Configuration support in `Settings`:
   `RISK_MAX_OPEN_POSITIONS`, `RISK_DRAWDOWN_KILL_SWITCH_PERCENT`) are typed
   and validated, ready for Phase 9.
 
-Test coverage: gate approval/rejection paths, the live-request refusal, the
-forced-flag scenario, and the configuration load rejection.
+`src/harsh_quant_os/safety/risk.py` — the pre-trade evaluation seam,
+added in Phase 6 so the backtest engine's simulated path invokes risk
+evaluation for every order (backtesting.md §8 criterion 6):
+
+- `RiskEvaluation` — the verdict type; a refusal must state its reason.
+- `RiskEvaluator` — the protocol every order path evaluates through.
+- `ConfiguredRiskEvaluator` — fail-closed over three of the four
+  Settings limits: position notional; open positions (evaluated, but a
+  single-instrument engine and the validated `>= 1` floor mean it
+  cannot refuse today — implemented so the limit is evaluated, not
+  skipped); and daily loss (per UTC date, measured from the first
+  evaluation of that date). Risk-*reducing* orders are never blocked,
+  and unparseable inputs refuse with the reason. The constructor runs
+  the live-trading guard first, so a configuration claiming live
+  trading cannot even build it. Limits are captured as exact decimals.
+  One instance is one run's companion (day-start tracking), the same
+  freshness rule as strategies. The drawdown kill switch, audit
+  records, rate limits and instrument allow-lists remain Phase 9.
+
+Test coverage: gate approval/rejection paths, the live-request refusal,
+the forced-flag scenario, the configuration load rejection — and for
+the evaluator, construction under a live flag, limit refusals naming
+both numbers, the daily-loss cycle across dates, reducing orders that
+are never blocked, and unparseable inputs refused with reasons
+(`tests/security/test_risk_evaluation.py`).
 
 ---
 

@@ -1,4 +1,4 @@
-"""Safety package - execution gates and kill switches."""
+"""Safety package - execution gates and risk evaluation."""
 
 from harsh_quant_os.safety.gates import (
     LiveTradingBlockedError,
@@ -10,9 +10,17 @@ from harsh_quant_os.safety.gates import (
     evaluate_trade_gate,
     resolve_trading_mode,
 )
+from harsh_quant_os.safety.risk import (
+    ConfiguredRiskEvaluator,
+    RiskEvaluation,
+    RiskEvaluator,
+)
 
 __all__ = [
+    "ConfiguredRiskEvaluator",
     "LiveTradingBlockedError",
+    "RiskEvaluation",
+    "RiskEvaluator",
     "TradeGateDecision",
     "TradeGateResult",
     "TradingGateError",

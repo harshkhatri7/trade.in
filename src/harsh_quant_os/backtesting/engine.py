@@ -381,6 +381,7 @@ def run_backtest(
         # it for every order; the strategy has no path around it.
         verdict = risk.evaluate(
             decision_time=bar.timestamp,
+            position=ledger.quantity,
             delta=delta,
             price=bar.close,
             equity=marked,
