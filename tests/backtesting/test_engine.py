@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
@@ -51,6 +51,7 @@ from harsh_quant_os.backtesting import (
     OrderStatus,
     SlippageModel,
     run_backtest,
+    window_coverage,
 )
 from harsh_quant_os.backtesting.data import load_backtest_data
 from harsh_quant_os.config import Settings
@@ -88,6 +89,21 @@ def _bar(
         high=max(opening, closing) + 1,
         low=min(opening, closing) - 1,
         close=closing,
+        volume=Decimal(10),
+    )
+
+
+def _bar_at(second: int, *, timeframe: str = "1m") -> Bar:
+    """One bar ``second`` seconds after midnight — sub-minute grids."""
+    stamp = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(seconds=second)
+    return Bar(
+        symbol="XBTUSD",
+        timeframe=timeframe,
+        timestamp=stamp,
+        open=Decimal(100),
+        high=Decimal(101),
+        low=Decimal(99),
+        close=Decimal(100),
         volume=Decimal(10),
     )
 
@@ -610,6 +626,81 @@ def test_load_backtest_data_shares_the_store_refusals(tmp_path: Path) -> None:
 
     with pytest.raises(RecipeError, match="no stored dataset"):
         load_backtest_data(tmp_path, "does.not.exist")
+
+
+# ---------------------------------------------------------------------------
+# Window coverage: gaps counted, never interpolated (methodology §5)
+# ---------------------------------------------------------------------------
+
+
+def test_window_coverage_of_a_contiguous_window_is_complete() -> None:
+    coverage = window_coverage(_data())
+
+    assert coverage.timeframe == "1m"
+    assert coverage.nominal_seconds == 60
+    assert coverage.actual_bars == 5
+    assert coverage.expected_bars == 5  # four minutes of span, both ends counted
+    assert coverage.gap_intervals == 0
+    assert coverage.missing_bars == 0
+    assert coverage.irregular_intervals == 0
+    assert coverage.is_complete is True
+
+
+def test_window_coverage_counts_missing_bars_across_gaps() -> None:
+    # Minutes 0, 2, 3, 5: two one-bar holes (minutes 1 and 4).
+    data = _data(
+        (_bar(0, "100", "101"), _bar(2, "100", "101"), _bar(3, "100", "101"), _bar(5, "100", "101"))
+    )
+
+    coverage = window_coverage(data)
+
+    assert coverage.actual_bars == 4
+    assert coverage.expected_bars == 6  # five minutes of span
+    assert coverage.gap_intervals == 2
+    assert coverage.missing_bars == 2
+    assert coverage.irregular_intervals == 0  # both gaps divide evenly
+    assert coverage.is_complete is False
+
+
+def test_window_coverage_flags_dense_and_off_grid_intervals() -> None:
+    dense = _data((_bar_at(0), _bar_at(45)))
+    coverage = window_coverage(dense)
+    # Denser than one bar: the record reports actual above expected
+    # rather than pretending the grid held.
+    assert coverage.actual_bars == 2
+    assert coverage.expected_bars == 1
+    assert coverage.gap_intervals == 0
+    assert coverage.missing_bars == 0
+    assert coverage.irregular_intervals == 1
+
+    # 150 seconds between 1m bars: one whole bar missing plus a 30s
+    # remainder that does not divide the grid.
+    off_grid = _data((_bar_at(0), _bar_at(150)))
+    coverage = window_coverage(off_grid)
+    assert coverage.gap_intervals == 1
+    assert coverage.missing_bars == 1
+    assert coverage.irregular_intervals == 1
+    assert coverage.is_complete is False
+
+
+def test_window_coverage_states_when_it_cannot_compute() -> None:
+    # Months have no fixed length; guessing 30 days would fabricate
+    # the gap count, so every computable field says so instead.
+    monthly = _data(
+        (_bar(0, "100", "101", timeframe="1mo"), _bar(59, "100", "101", timeframe="1mo"))
+    )
+
+    coverage = window_coverage(monthly)
+
+    assert coverage.timeframe == "1mo"
+    assert coverage.nominal_seconds is None
+    assert coverage.expected_bars is None
+    assert coverage.gap_intervals is None
+    assert coverage.missing_bars is None
+    assert coverage.irregular_intervals is None
+    assert coverage.actual_bars == 2
+    # Unknown coverage must never read as full coverage.
+    assert coverage.is_complete is False
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,10 @@
 Historical simulation with correct sequencing, explicit costs, and a
 reproducible run manifest.
 
-**Status: not implemented.** No simulated results exist in this repository.
+**Status: requirements recorded here; the implementation lives in
+`src/harsh_quant_os/backtesting/` (Phase 6), driven by
+`hqos backtest report`. Reports are written to `research/reports/`,
+which is Git-ignored — simulated results are never committed.**
 
 Requirements the engine must satisfy:
 

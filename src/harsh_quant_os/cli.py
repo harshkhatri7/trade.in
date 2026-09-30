@@ -21,6 +21,7 @@ import sys
 import uuid
 from collections.abc import Callable, Coroutine, Sequence
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,21 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harsh_quant_os.auth import AuthService
 from harsh_quant_os.auth.errors import DatabaseUnavailable, DuplicateUser, PasswordPolicyError
+from harsh_quant_os.backtesting import (
+    BacktestConfig,
+    BacktestError,
+    BpsCommission,
+    CloseThreshold,
+    FixedBpsSlippage,
+    build_manifest,
+    build_report,
+    compute_metrics,
+    cost_sensitivity,
+    load_backtest_data,
+    parse_decimal,
+    run_backtest,
+    window_coverage,
+)
 from harsh_quant_os.config import Settings, SettingsError
 from harsh_quant_os.contracts.provenance import DataQualityStatus, Timeframe
 from harsh_quant_os.data import (
@@ -57,8 +73,18 @@ from harsh_quant_os.db import (
     import_database,
 )
 from harsh_quant_os.db.models import User
-from harsh_quant_os.safety import resolve_trading_mode
+from harsh_quant_os.quant.recipes.recipe import RecipeError
+from harsh_quant_os.safety import (
+    ConfiguredRiskEvaluator,
+    TradingGateError,
+    resolve_trading_mode,
+)
 from harsh_quant_os.version import DISPLAY_VERSION, PROJECT_NAME, __version__
+
+#: Where ``hqos backtest report`` writes when ``--out`` is omitted.
+#: Git-ignored: a simulated result is an artefact of a run, not
+#: repository content (reports are never committed).
+DEFAULT_REPORT_ROOT = Path(__file__).resolve().parents[2] / "research" / "reports"
 
 
 class _CliError(Exception):
@@ -180,6 +206,88 @@ def _build_parser() -> argparse.ArgumentParser:
         "--store",
         default=str(DEFAULT_STORE_ROOT),
         help=f"Directory to write the dataset into (default: {DEFAULT_STORE_ROOT}).",
+    )
+
+    backtest = subparsers.add_parser(
+        "backtest",
+        help="Run a historical simulation and write an honest report.",
+    )
+    backtest_commands = backtest.add_subparsers(dest="backtest_command", required=True)
+
+    report = backtest_commands.add_parser(
+        "report",
+        help=(
+            "Run the harness's reference strategy over a stored dataset and "
+            "write a markdown report: limitations first, manifest attached, "
+            "assumptions separated from measured results. The report file is "
+            "a simulated result and is written outside version control."
+        ),
+    )
+    report.add_argument(
+        "--dataset",
+        required=True,
+        help="Stored dataset name, e.g. kraken.xbtusd.1m.",
+    )
+    report.add_argument(
+        "--version",
+        default=None,
+        help="Pinned dataset version (SHA-256). Defaults to the only stored version.",
+    )
+    report.add_argument(
+        "--store",
+        default=str(DEFAULT_STORE_ROOT),
+        help=f"Data root holding clean/ (default: {DEFAULT_STORE_ROOT}).",
+    )
+    report.add_argument(
+        "--out",
+        default=None,
+        help=(
+            "Report file to write. Defaults to "
+            "research/reports/backtest-<dataset>-<run id>.md in the repository."
+        ),
+    )
+    report.add_argument(
+        "--target-qty",
+        default="0.01",
+        help="Position size while the rule holds, exact decimal (default 0.01).",
+    )
+    report.add_argument(
+        "--entry-above",
+        default="0",
+        help=(
+            "Enter while close >= this exact decimal; 'always' enters "
+            "unconditionally (default 0, which holds on any non-negative "
+            "price)."
+        ),
+    )
+    report.add_argument(
+        "--exit-below",
+        default=None,
+        help=(
+            "Return to flat while close <= this exact decimal; omit to never "
+            "exit. Requires --entry-above as a real band, because an 'always' "
+            "entry could never exit."
+        ),
+    )
+    report.add_argument(
+        "--capital",
+        default="1000",
+        help="Starting capital, exact decimal (default 1000).",
+    )
+    report.add_argument(
+        "--rate-bps",
+        default="5",
+        help="Commission in basis points, exact decimal (default 5).",
+    )
+    report.add_argument(
+        "--fixed-fee",
+        default="0",
+        help="Fixed commission per fill, exact decimal (default 0).",
+    )
+    report.add_argument(
+        "--slippage-bps",
+        default="10",
+        help="Slippage in basis points, exact decimal (default 10).",
     )
     return parser
 
@@ -591,6 +699,87 @@ def _ingest(args: argparse.Namespace) -> int:
         ) from None
 
 
+def _backtest_report(args: argparse.Namespace) -> int:
+    """Run one recorded backtest and write its report.
+
+    Everything printed was just observed: the run id the manifest
+    derived, the path the file was written to, and the bar, fill and
+    ending-equity numbers the engine computed. Failures surface as
+    ``_CliError`` so they print as one safe line instead of a traceback.
+
+    Raises:
+        _CliError: Any input, store, safety or risk refusal - the
+            message is the refusal's own words (they carry no
+            credentials; Settings errors were already funnelled through
+            :func:`_load_settings`).
+    """
+    try:
+        entry_above: Decimal | None = None
+        if args.entry_above != "always":
+            entry_above = parse_decimal(args.entry_above, label="--entry-above")
+        exit_below: Decimal | None = None
+        if args.exit_below is not None:
+            exit_below = parse_decimal(args.exit_below, label="--exit-below")
+
+        strategy = CloseThreshold(
+            target_qty=parse_decimal(args.target_qty, label="--target-qty"),
+            entry_above=entry_above,
+            exit_below=exit_below,
+        )
+        config = BacktestConfig(
+            starting_capital=parse_decimal(args.capital, label="--capital"),
+            commission=BpsCommission(
+                rate_bps=parse_decimal(args.rate_bps, label="--rate-bps"),
+                fixed_fee=parse_decimal(args.fixed_fee, label="--fixed-fee"),
+            ),
+            slippage=FixedBpsSlippage(bps=parse_decimal(args.slippage_bps, label="--slippage-bps")),
+        )
+
+        settings = _load_settings()
+
+        def fresh_risk() -> ConfiguredRiskEvaluator:
+            """A new evaluator per run - day-start state never carries over."""
+            return ConfiguredRiskEvaluator(settings)
+
+        data = load_backtest_data(Path(args.store), args.dataset, version=args.version)
+        risk = fresh_risk()
+        result = run_backtest(data, strategy, config, risk=risk)
+        manifest = build_manifest(result, config=config, risk=risk)
+        metrics = compute_metrics(result)
+        coverage = window_coverage(data)
+        sensitivity = cost_sensitivity(data, strategy, config, risk_factory=fresh_risk)
+    except (BacktestError, RecipeError, TradingGateError, ValueError) as exc:
+        raise _CliError(str(exc)) from exc
+
+    out_path = (
+        Path(args.out)
+        if args.out
+        else DEFAULT_REPORT_ROOT / f"backtest-{args.dataset}-{str(manifest['run_id'])[:12]}.md"
+    )
+    report_text = build_report(
+        result,
+        manifest=manifest,
+        metrics=metrics,
+        coverage=coverage,
+        sensitivity=sensitivity,
+        strategy_note=(
+            "The strategy is the harness's reference rule and its parameters "
+            "are inputs chosen to make this run possible, not the output of "
+            "a parameter search."
+        ),
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report_text, encoding="utf-8")
+
+    print(f"run id: {manifest['run_id']}")
+    print(f"report: {out_path}")
+    print(
+        f"bars: {len(result.equity_curve)}  filled: {len(result.filled)}  "
+        f"ending equity: {result.ending_equity}"
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return a process exit code."""
     args = _build_parser().parse_args(list(argv) if argv is not None else None)
@@ -630,6 +819,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         try:
             return _ingest(args)
+        except _CliError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    if args.command == "backtest":
+        if args.backtest_command != "report":
+            print(f"Unknown command: backtest {args.backtest_command}", file=sys.stderr)
+            return 2
+        try:
+            return _backtest_report(args)
         except _CliError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

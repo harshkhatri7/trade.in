@@ -102,19 +102,56 @@ behaviour that live systems would refuse.
 
 ---
 
-## 7. Current state (Phase 0)
+## 7. Current state (Phase 6)
 
-Nothing is implemented. `packages/backtesting/` exists as an empty,
-documented placeholder. There are no simulated results anywhere in this
-repository, and none will appear before Phase 6.
+Implemented in `src/harsh_quant_os/backtesting/` (the `packages/`
+directory remains the Phase 0 requirements record):
+
+| Concern                                                                       | Where                 |
+| ----------------------------------------------------------------------------- | --------------------- |
+| Bar sequencing, the intrabar rule, fills, ledger, the equity identity          | `engine.py`           |
+| The strategy contract and the bounded history view                            | `strategy.py`         |
+| Commission and slippage models as explicit inputs                             | `costs.py`            |
+| Configured risk evaluation of every simulated order                           | `../safety/risk.py`   |
+| Version-pinned dataset loading and the window-coverage check                  | `data.py`             |
+| The run manifest and byte-identical re-execution                              | `manifest.py`         |
+| The metric set with its assumptions                                           | `metrics.py`          |
+| The report, cost sensitivity and the Wilson interval                          | `report.py`           |
+| The reference strategy                                                        | `reference.py`        |
+| `hqos backtest report`                                                        | `../cli.py`           |
+
+Every simulated order is evaluated by `ConfiguredRiskEvaluator`
+before it may fill — the same configured gate the paper-trading path
+will use. Reports are written to `research/reports/`, which Git
+ignores: a simulated result is an artefact of a run, never repository
+content. Out-of-sample splitting, walk-forward testing and regime
+splits belong to Phase 7 and are **not implemented**.
 
 ---
 
 ## 8. Phase 6 exit criteria
 
-- Deterministic engine with golden-value tests.
-- Costs, slippage and sizing are explicit inputs, recorded in the manifest.
-- Manifest-based reproducibility test passes.
-- Look-ahead and leakage checks run automatically.
-- Reports include assumptions and limitations.
-- Risk evaluation is invoked in the simulated path.
+Assessed 2026-09-30. Each item is checked against tests that fail
+when the claim stops being true:
+
+- [x] **Deterministic engine with golden-value tests** —
+  `tests/backtesting/test_engine.py` works the money path out by hand
+  in `Decimal`; the suite reproduces it digit for digit.
+- [x] **Costs, slippage and sizing are explicit inputs, recorded in
+  the manifest** — `bps_commission` and `fixed_bps_slippage` are
+  closed sets; an unknown model is refused, not guessed.
+- [x] **Manifest-based reproducibility test passes** —
+  `tests/backtesting/test_manifest.py` stores a manifest as JSON,
+  re-executes it and compares three artefact hashes; a moved hash
+  raises `ReproductionMismatch`.
+- [x] **Look-ahead and leakage checks run automatically** — a
+  `CausalityViolation` is asserted per fill, `HistoryView` raises
+  `IndexError` past the current bar, and datasets load only by
+  pinned, re-hashed version (Phase 5's split and fit-scope assertions
+  cover the feature side).
+- [x] **Reports include assumptions and limitations** — `report.py`
+  states limitations first and separates assumptions from measured
+  results; `tests/backtesting/test_report.py` asserts the ordering,
+  the caveat and the absence of every `FORBIDDEN_CLAIMS` phrase.
+- [x] **Risk evaluation is invoked in the simulated path** — every
+  simulated order passes `ConfiguredRiskEvaluator` before it fills.

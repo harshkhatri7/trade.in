@@ -26,6 +26,16 @@ The pieces:
 - :mod:`~harsh_quant_os.backtesting.metrics` — the §4 metric set with
   its assumptions attached; undefined figures are ``None``, never a
   plausible-looking number.
+- :mod:`~harsh_quant_os.backtesting.report` — the §5/§6 report:
+  limitations first, manifest attached, assumptions separated from
+  measured results, plus the cost-sensitivity runs that address the
+  cost-optimism row with measurements.
+- :mod:`~harsh_quant_os.backtesting.reference` — the reference
+  strategy the harness runs: explicit sizing, no hidden defaults.
+
+Window coverage (methodology §5's data-side check) is
+:func:`~harsh_quant_os.backtesting.data.window_coverage`: missing bars
+are counted, never interpolated.
 
 Exit-criteria evidence for this increment lives in
 ``tests/backtesting/``: hand-computed golden values for the whole
@@ -42,7 +52,12 @@ from harsh_quant_os.backtesting.costs import (
     FixedBpsSlippage,
     SlippageModel,
 )
-from harsh_quant_os.backtesting.data import BacktestData, load_backtest_data
+from harsh_quant_os.backtesting.data import (
+    BacktestData,
+    WindowCoverage,
+    load_backtest_data,
+    window_coverage,
+)
 from harsh_quant_os.backtesting.engine import (
     NEXT_BAR_OPEN,
     BacktestConfig,
@@ -75,6 +90,14 @@ from harsh_quant_os.backtesting.metrics import (
     VolatilityStats,
     compute_metrics,
 )
+from harsh_quant_os.backtesting.reference import CloseThreshold, parse_decimal
+from harsh_quant_os.backtesting.report import (
+    DEFAULT_SENSITIVITY_FACTORS,
+    CostSensitivityPoint,
+    build_report,
+    cost_sensitivity,
+    wilson_interval,
+)
 from harsh_quant_os.backtesting.strategy import (
     DecisionContext,
     HistoryView,
@@ -83,6 +106,7 @@ from harsh_quant_os.backtesting.strategy import (
 )
 
 __all__ = [
+    "DEFAULT_SENSITIVITY_FACTORS",
     "MANIFEST_VERSION",
     "NEXT_BAR_OPEN",
     "BacktestConfig",
@@ -91,7 +115,9 @@ __all__ = [
     "BacktestResult",
     "BpsCommission",
     "CausalityViolation",
+    "CloseThreshold",
     "CommissionModel",
+    "CostSensitivityPoint",
     "CostStats",
     "DecisionContext",
     "DrawdownStats",
@@ -108,13 +134,19 @@ __all__ = [
     "Strategy",
     "TradeStats",
     "VolatilityStats",
+    "WindowCoverage",
     "build_manifest",
+    "build_report",
     "closes_as_float",
     "compute_metrics",
     "compute_run_id",
+    "cost_sensitivity",
     "load_backtest_data",
     "manifest_from_json",
     "manifest_to_json",
+    "parse_decimal",
     "run_backtest",
     "run_from_manifest",
+    "wilson_interval",
+    "window_coverage",
 ]

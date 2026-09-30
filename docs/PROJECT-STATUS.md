@@ -4,13 +4,13 @@
 | -------------------- | ---------------------------------------------- |
 | **Project**          | HARSH QUANT OS                                 |
 | **Version**          | 0.1.0-alpha                                    |
-| **Current phase**    | 4 — Market terminal (in progress)            |
+| **Current phase**    | 6 — Backtesting (complete)                  |
 | **Live trading**     | **DISABLED**                                   |
 | **Broker**           | **NOT CONNECTED**                              |
 | **Paper trading**    | NOT IMPLEMENTED                                |
 | **Capital (paper)**  | ₹1,000                                         |
 | **Primary objective**| Build reliable research infrastructure         |
-| **Last updated**     | 2026-09-29                                     |
+| **Last updated**     | 2026-09-30                                     |
 
 > This file states only what is true right now. It is validated by
 > `tests/unit/test_documentation.py`, and it must be updated in the same
@@ -24,7 +24,7 @@
 | --------------------------- | ------------------------------------------------------------ |
 | Git repository              | Initialized, branch `main`, no remote configured             |
 | Repository layout           | `apps/`, `packages/`, `src/`, `agents/`, `docs/`, `tests/`, `scripts/`, `infrastructure/` |
-| Documentation               | Complete for Phases 0–3 (architecture, development, security, operations, research, ADRs) |
+| Documentation               | Complete for Phases 0–6 (architecture, development, security, operations, research, ADRs) |
 | Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log`, `datasets`, `dataset_provenance`, `strategies`, `experiments`, `journal_entries` |
 | Migrations                  | Three revisions (`930c38609bc3` → `3842df3d0db8` → `7c4d9e2a15b3`); empty → head → empty is covered by a test |
 | Backup and restore          | `harsh_quant_os.db.backup` — binary COPY with the schema revision in the manifest; round trip proved by a test |
@@ -42,6 +42,7 @@
 | Dataset store + manifest    | `data/raw`, `data/clean`, `data/quarantine` written content-addressed and atomically; `datasets` carries quality status, version and storage path with three check constraints; provenance appended per acquisition |
 | Market-data adapter         | `KrakenProvider` — Kraken's public OHLC feed behind `HttpTransport` (stdlib client, no key, prices as decimal strings); paging, an unfinished candle and both observed error responses are handled explicitly, and an opt-in live test composes the whole path |
 | Ingestion job               | `hqos data ingest` — fetch → validate → store → register in one command; refuses (exit 1) and quarantines a batch validation rejects; database proved reachable before any network call |
+| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator` |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
@@ -61,6 +62,9 @@ hqos db restore --source data/backups/2026-09-29 # refuses a populated target
 
 hqos data ingest --symbol XBTUSD --timeframe 1h `
   --start 2026-09-01T00:00:00+00:00 --end 2026-09-28T00:00:00+00:00
+
+hqos backtest report --dataset kraken.xbtusd.1m `
+  --entry-above 84000 --exit-below 83000 # report -> research/reports/ (Git-ignored)
 ```
 
 `data/` is ignored by Git in its entirety, so a backup written beneath it is
@@ -124,7 +128,12 @@ defect.
   on-disk feature store all exist with golden tests; the Phase 5 exit
   criteria are assessed met below. Distribution fitting and
   resampling/session alignment remain not implemented.
-- Backtesting engine — Phase 6
+- Backtesting engine — Phase 6, complete. The deterministic engine,
+  the configured risk evaluator on every simulated order, the §3 run
+  manifest with byte-identical reproduction, the §4 metric set and the
+  §6 report all exist with golden tests; the Phase 6 exit criteria are
+  assessed met below. Out-of-sample splitting, walk-forward testing
+  and regime-split results remain not implemented (Phase 7).
 - Strategy validation and walk-forward testing — Phase 7
 - AI research assistant — Phase 8
 - Risk engine — Phase 9
@@ -622,6 +631,95 @@ delivered and validated on 2026-09-30:**
 - `ruff`, `mypy --strict` and the full test suite green — **met**:
   492 passed + 1 skipped; ruff check, ruff format and mypy clean.
 
-Carried forward, none of it Phase 4: nightly backup scheduling and where
+**Phase 6 (Backtesting engine) is complete.** Increments 1–4 are
+delivered and validated on 2026-09-30:
+
+- **Increment 1 — deterministic engine core** (`engine.py`,
+  `strategy.py`, `costs.py`, `data.py`, `safety/risk.py`): the
+  documented intrabar rule (a fill pending at the next bar's open ±
+  slippage, marked at the close, decided after the mark), `Decimal`
+  money end to end with an engine-end identity check
+  (`equity == capital + realised − commission + unrealised` within
+  1e-12), a bounded `HistoryView` that raises `IndexError` past the
+  current bar, a `CausalityViolation` asserted per fill, average-cost
+  ledger accounting (crossings realise the closed portion, then re-open
+  the remainder at the fill price), a final-bar order expiring
+  structurally before risk evaluation, and `OrderStatus` limited to
+  FILLED / EXPIRED / REJECTED. The money path is worked out by hand in
+  `tests/backtesting/test_engine.py`.
+- **Increment 2 — configured risk for every simulated order**: the
+  constructor runs the live-trading assertion first; limits are exact
+  decimals; only risk-increasing orders are checked (reducing orders
+  are never blocked); daily loss is tracked per UTC date from first
+  evaluation; unparseable limits refuse with a reason; invalid limits
+  raise at construction; the engine passes the position into
+  evaluation.
+- **Increment 3 — manifest, metrics, byte-identical reproduction**
+  (`manifest.py`, `metrics.py`): the §3 manifest with a content-hash
+  `run_id` and no wall clock anywhere, the git SHA read from
+  `git rev-parse HEAD`, three artefact hashes compared on
+  re-execution with `ReproductionMismatch` when one moves, and the §4
+  metric set with its assumptions attached — annualisation from actual
+  elapsed time so gaps cannot inflate a rate, and undefined figures
+  rendering `None` with the reason instead of a plausible number.
+  While writing the real-data report, a defect was found and fixed:
+  the git-SHA reader validated against 64-hex only, so every real
+  40-character `rev-parse` answer was rejected and `null` recorded
+  forever — now both real forms are accepted, with a regression test
+  that feeds git's own output shapes through.
+- **Increment 4 — report, coverage, real-data run** (`report.py`,
+  `reference.py`, `window_coverage`, `hqos backtest report`): the §6
+  report with limitations first, the manifest attached, assumptions
+  separated from measured results, the standard caveat, conditional
+  language and a deterministic Wilson interval for the hit rate (the
+  engine consumes no randomness, so no bootstrap is run — stated as a
+  limitation); window-coverage checks that count missing bars and
+  never interpolate them (a timeframe with no fixed length says so
+  rather than guessing a month); cost sensitivity at 0.5x/1x/2x with
+  a fresh risk evaluator per run; and the CLI command that ties it
+  together. Two reports were generated from the real
+  `kraken.xbtusd.1m` store (661 bars, coverage complete — 0 missing,
+  0 irregular — dataset version `0a7dd69ff1c4…e29b0`) into
+  `research/reports/`, which is Git-ignored: simulated results are
+  never committed.
+- battery: `pytest` **585 passed** + 1 skipped (was 492 at Phase 5's
+  close — +93: the 84-test backtesting suite plus the 9 risk-evaluator
+  security tests), `ruff check` clean, `ruff format --check` clean
+  (186 files), `mypy` clean over 140 source files (was 121),
+  prettier, eslint and `tsc` clean, vitest **132 passed** (no web
+  changes this phase).
+- not started within Phase 6: nothing from backtesting.md §8's exit
+  criteria; out-of-sample splitting, walk-forward and regime splits
+  are Phase 7's.
+
+**Phase 6 exit criteria (backtesting.md §8) — assessed 2026-09-30:**
+
+- Deterministic engine with golden-value tests — **met**:
+  `tests/backtesting/test_engine.py` restates the money path in
+  `Decimal` by hand; the suite reproduces it digit for digit.
+- Costs, slippage and sizing are explicit inputs, recorded in the
+  manifest — **met**: `bps_commission` / `fixed_bps_slippage` are
+  closed sets; an unknown model is refused with "refusing to guess".
+- Manifest-based reproducibility test passes — **met**:
+  `test_manifest.py` stores a manifest as JSON, re-executes it and
+  compares orders, equity and whole-result hashes; the reproduction
+  is byte-identical and a moved hash raises `ReproductionMismatch`.
+- Look-ahead and leakage checks run automatically — **met**: a
+  `CausalityViolation` per fill, `HistoryView` bounded to the current
+  bar, datasets loaded only by pinned, re-hashed version (Phase 5's
+  split-disjointness and fit-scope assertions cover the feature side).
+- Reports include assumptions and limitations — **met**: `report.py`
+  puts limitations first and separates assumptions from measured
+  results; `test_report.py` asserts the ordering, the caveat, the
+  conditional language and the absence of every `FORBIDDEN_CLAIMS`
+  phrase.
+- Risk evaluation is invoked in the simulated path — **met**: every
+  simulated order passes `ConfiguredRiskEvaluator` before it may
+  fill.
+
+Not started as of Phase 6's close: Phase 7 (strategy validation and
+walk-forward testing).
+
+Carried forward, none of it Phase 6: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and
 the human-supplied `local_agent_token`.

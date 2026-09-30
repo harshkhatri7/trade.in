@@ -81,6 +81,13 @@ coverage.xml
 *.db
 !*.db.schema.sql
 
+# ---------- Reports ----------
+# Backtest reports are simulated results of a run. They are generated
+# locally into research/reports/ and never committed; only the empty
+# directory is kept, via research/reports/.gitkeep.
+research/reports/*
+!research/reports/.gitkeep
+
 # ---------- Build / packaging artefacts ----------
 *.whl
 *.egg

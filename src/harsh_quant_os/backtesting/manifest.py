@@ -82,6 +82,9 @@ __all__ = [
 MANIFEST_VERSION = 1
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+# git's own revision forms: SHA-1 (40 hex, git's default object
+# format) or SHA-256 repositories (64 hex).
+_GIT_SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +159,11 @@ def _git_sha() -> str | None:
 
     Never invented: git's own answer, or nothing. Subprocess with an
     argument list (no shell), short timeout, all failures → ``None``.
+
+    The accepted form is git's own: 40 hex characters for a SHA-1
+    object format (git's default), 64 for a SHA-256 repository.
+    Validating against 64 alone would reject every real ``rev-parse``
+    answer and silently record null forever.
     """
     repo_root = Path(__file__).resolve().parents[3]
     try:
@@ -172,7 +180,7 @@ def _git_sha() -> str | None:
     if completed.returncode != 0:
         return None
     candidate = completed.stdout.strip()
-    return candidate if _SHA256_RE.fullmatch(candidate) else None
+    return candidate if _GIT_SHA_RE.fullmatch(candidate) else None
 
 
 def _commission_record(model: CommissionModel) -> dict[str, str]:

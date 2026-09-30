@@ -114,5 +114,35 @@ substitutes for paper evidence.
 
 ## 8. Current state
 
-No backtester exists. `packages/backtesting/` is an empty placeholder for
-Phase 6. No simulated results are present in this repository.
+Implemented for Phase 6 in `src/harsh_quant_os/backtesting/`:
+
+- **§1/§2** — deterministic engine: next-bar-open fills with explicit
+  `Decimal` commission and slippage, a bounded history view that
+  cannot read past the current bar, and the configured risk evaluator
+  consulted for every simulated order;
+- **§3** — `manifest.py`: a content-hash `run_id`, no wall clock
+  anywhere, byte-identical re-execution, and `ReproductionMismatch`
+  when an artefact hash moves (a defect, investigated — never
+  explained away);
+- **§4** — `metrics.py`: the always-reported set with its assumptions
+  attached; an undefined figure renders `None` with the reason stated,
+  never a plausible-looking number;
+- **§5** — the detections that exist today: look-ahead (causality
+  assertions per fill), leakage (version-pinned, re-hashed datasets),
+  survivorship (single-instrument membership recorded as-of in the
+  manifest), cost optimism (`cost_sensitivity` re-runs the same
+  strategy at 0.5x/1x/2x) and small samples (the trade-count threshold
+  is named where it is used). Regime splits, walk-forward results and
+  multiple-testing adjustment need Phase 7's workflow and are **not
+  implemented** — the report states that the number of variants tried
+  was not recorded rather than implying it was;
+- **§6** — `report.py`: limitations first, the manifest attached,
+  assumptions separated from measured results, conditional language
+  and the standard caveat. `tests/backtesting/test_report.py` asserts
+  each rule, including that generated text contains none of the
+  `FORBIDDEN_CLAIMS` phrases.
+
+Run it with `hqos backtest report --dataset <name>`; the report lands
+in `research/reports/`, which is Git-ignored — simulated results are
+never committed. Reproducing a run is `run_from_manifest` against the
+manifest the report attaches.

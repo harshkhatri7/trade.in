@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import subprocess
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
@@ -136,7 +137,7 @@ def test_manifest_records_every_section_3_field(tmp_path: Path) -> None:
     assert manifest["intrabar_rule"] == "next_bar_open"
 
     git_sha = manifest["git_sha"]
-    assert git_sha is None or re.fullmatch(r"[0-9a-f]{64}", str(git_sha))
+    assert git_sha is None or re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", str(git_sha))
 
     dataset = cast(dict[str, object], manifest["dataset"])
     assert dataset["id"] == "test.bars"
@@ -361,12 +362,62 @@ def test_a_hash_that_moves_is_the_defect_signal(tmp_path: Path) -> None:
         run_from_manifest(tmp_path, falsified, strategy=Threshold(), risk=_fresh_risk())
 
 
+def _real_git_head() -> str | None:
+    """``git rev-parse HEAD`` asked independently of the code under test."""
+    repo_root = Path(manifest_module.__file__).resolve().parents[3]
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    candidate = completed.stdout.strip()
+    if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", candidate):
+        return candidate
+    return None
+
+
 def test_git_sha_is_read_or_null_never_invented(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manifest = _manifest_for(tmp_path)
     git_sha = manifest["git_sha"]
-    assert git_sha is None or re.fullmatch(r"[0-9a-f]{64}", str(git_sha))
+
+    # Asked independently: when this checkout answers, the manifest
+    # must carry git's own bytes — a silently-null field would be a
+    # provenance hole, not an honest fallback.
+    expected = _real_git_head()
+    if expected is None:
+        assert git_sha is None  # git unavailable: null, never invented
+    else:
+        assert git_sha == expected
+    assert manifest["run_id"] == compute_run_id(manifest)
+
+    # git's default SHA-1 object format is 40 hex characters; a check
+    # that accepted only 64-character digests rejected every real
+    # rev-parse answer and recorded null forever. Both real forms must
+    # pass through verbatim.
+    for real_form in (
+        "0123456789abcdef0123456789abcdef01234567",  # SHA-1 repository
+        "0123456789abcdef" * 4,  # SHA-256 repository
+    ):
+        answer = subprocess.CompletedProcess(
+            args=["git", "rev-parse", "HEAD"],
+            returncode=0,
+            stdout=real_form + "\n",
+            stderr="",
+        )
+        # Patching the shared module's attribute is exactly what the
+        # code under test resolves at call time.
+        monkeypatch.setattr(subprocess, "run", lambda *args, _answer=answer, **kwargs: _answer)
+        assert manifest_module._git_sha() == real_form
 
     # With git unavailable, the field becomes null and the id still works.
     monkeypatch.setattr(manifest_module, "_git_sha", lambda: None)
@@ -374,7 +425,6 @@ def test_git_sha_is_read_or_null_never_invented(
     assert without_git["git_sha"] is None
     assert without_git["run_id"] == compute_run_id(without_git)
     if git_sha is not None:
-        # Only a meaningful difference when this checkout has a HEAD.
         assert without_git["run_id"] != manifest["run_id"]
 
 
