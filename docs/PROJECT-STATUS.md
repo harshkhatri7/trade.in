@@ -119,8 +119,9 @@ defect.
   the multi-timeframe view all exist; increments 1–4 are delivered and
   observed in a real browser.
 - Quant / feature engine — Phase 5, in progress. The indicator library
-  with golden tests exists; statistics, transforms, recipes and the
-  feature store do not yet.
+  and the statistical tests (stationarity, autocorrelation, correlation)
+  exist with golden tests; transforms, recipes and the feature store do
+  not yet.
 - Backtesting engine — Phase 6
 - Strategy validation and walk-forward testing — Phase 7
 - AI research assistant — Phase 8
@@ -458,6 +459,40 @@ library — is delivered and validated on 2026-09-30:
   source files (was 95);
 - not started within Phase 5: `stats/`, `transforms/`, `recipes/`,
   `registry/`, the leakage split/label helpers, and the benchmark.
+
+**Increment 2 — statistical properties — is delivered and validated on
+2026-09-30:**
+
+- `src/harsh_quant_os/quant/stats/`: `adf_stationarity` (the augmented
+  Dickey-Fuller unit-root test returning statistic, p-value, sample
+  sizes, alpha, the rejection flag and the critical values in one typed
+  result — the p-value is statsmodels' MacKinnon approximation,
+  `result_object=False` is passed explicitly so a 0.16 default change
+  cannot move the contract, and the `stationary` flag is exactly
+  `p_value < alpha`), `acf` (the biased `1/n` autocorrelation estimator
+  with `acf[0] = 1`, lags capped below the series length, constant
+  series refusing instead of returning `NaN`) and `correlation_matrix`
+  (Pearson over equally long columns; constant columns and unequal
+  lengths refuse with the column named; a single column returns
+  `[[1.0]]`, not a bare scalar);
+- `tests/quant/test_stats.py`: 40 tests. The ADF statistic is
+  cross-checked against an OLS t-statistic computed **from scratch in
+  the test** (design matrix, least squares, RSS, standard error —
+  statsmodels not involved in the expectation); the behavioural fixtures
+  are a written-out Park-Miller LCG, observed rejecting the unit-root
+  null at p < 0.01 as raw noise and not rejecting at 5% as its
+  cumulative sum, asserted as thresholds rather than pinned library
+  output; `acf` and the correlation matrix are compared against values
+  worked out by hand in the test from the documented formulas;
+- `pyproject.toml`: the `quant` extra's `statsmodels` floor moves to
+  `>=0.15.0` (the `result_object` keyword this code passes was introduced
+  there) and a mypy override records that statsmodels ships no
+  `py.typed`, with the boundary validation this module performs instead;
+- battery: `pytest` **383 passed** + 1 skipped (was 297 at Phase 4's
+  close — +86 quant tests), `ruff check` clean, `ruff format --check`
+  clean, `mypy` clean over 106 source files (was 95).
+- not started within Phase 5: `transforms/`, `recipes/`, `registry/`,
+  the leakage split/label helpers, and the benchmark.
 
 Carried forward, none of it Phase 4: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and

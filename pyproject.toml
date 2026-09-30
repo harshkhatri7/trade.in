@@ -49,14 +49,18 @@ dev = [
   "httpx2>=2.0.0",
   "ruff>=0.8.0",
 ]
-# Quant stack - installed only when quantitative work starts (Phase 5).
+# Quant stack - Phase 5; each dependency's written reason is
+# docs/architecture/quant-engine.md section 2.
 quant = [
   "numpy>=2.1.0",
   "pandas>=2.2.0",
   "polars>=1.12.0",
   "scipy>=1.14.0",
   "scikit-learn>=1.5.0",
-  "statsmodels>=0.14.4",
+  # 0.15 introduced adfuller(result_object=...); quant.stats passes it
+  # explicitly to pin the plain-tuple return instead of warning about a
+  # default that changes in 0.16.
+  "statsmodels>=0.15.0",
 ]
 # Persistence layer - installed when the database phase starts (Phase 2).
 # The [asyncio] extra pulls in greenlet, without which AsyncEngine cannot run.
@@ -140,6 +144,15 @@ warn_required_dynamic_aliases = true
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_untyped_decorators = false
+
+# statsmodels ships no py.typed marker (checked at 0.15), so its internals
+# cannot be type-checked. quant.stats guards the boundary itself instead:
+# every input is validated before the call, the return shape is pinned with
+# result_object=False, and outputs are converted to plain floats/ints on
+# the way out.
+[[tool.mypy.overrides]]
+module = "statsmodels.*"
+ignore_missing_imports = true
 
 # ----------------------------------------------------------------------
 # Pytest

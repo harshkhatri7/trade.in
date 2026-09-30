@@ -87,7 +87,7 @@ packages/quant/
 
 ---
 
-## 6. Current state (Phase 5, increment 1)
+## 6. Current state (Phase 5, increment 2)
 
 Implemented:
 
@@ -103,17 +103,36 @@ Implemented:
     smoothing, with the flat → 50 / no-loss → 100 / no-gain → 0 policies
     stated in the module), `macd` (fast < slow enforced). Every formula
     is written out in the module docstrings.
-- `tests/quant/test_indicators.py` — 46 tests: golden values derived by
-  hand in the test file (EMA as exact fractions `5/3, 23/9, 95/27,
-  365/81`; RSI's Wilder recursion worked through fraction by fraction;
-  population variances and VWAP arithmetic), an independent window-loop
-  cross-check, no-look-ahead properties (appending a future bar cannot
-  change any earlier output) asserted for every function, determinism and
-  input-immutability checks, and the validation refusals.
+  - `stats/` — `adf_stationarity` (augmented Dickey-Fuller: statistic,
+    p-value, sample sizes and critical values in one typed result; the
+    p-value comes from statsmodels' MacKinnon approximation, with
+    `result_object=False` pinned so a future default change cannot move
+    this contract; the `stationary` flag is exactly `p < alpha`), `acf`
+    (biased `1/n` estimator, `acf[0] = 1`, lags capped below the series
+    length, a constant series refuses instead of returning `NaN`), and
+    `correlation_matrix` (Pearson over equally long columns; a constant
+    column and unequal lengths refuse with the column named; one column
+    returns `[[1.0]]`).
+- `tests/quant/` — 86 tests total:
+  - `test_indicators.py` (46): golden values hand-derived in the test
+    file (EMA as exact fractions `5/3, 23/9, 95/27, 365/81`; RSI's
+    Wilder recursion worked through fraction by fraction; population
+    variances and VWAP arithmetic), an independent window-loop
+    cross-check, and for every function the three mechanical properties
+    quant-engine.md requires: appending a future bar changes no earlier
+    output (no look-ahead), two calls are bit-identical (determinism),
+    and the input array is never mutated — plus the validation refusals.
+  - `test_stats.py` (40): the ADF statistic is cross-checked against an
+    OLS t-statistic computed from scratch in the test (design matrix,
+    least squares, standard error — no statsmodels); the behavioural
+    fixtures are a written-out Park-Miller LCG (raw noise: null
+    rejected; its cumulative sum — a genuine random walk: not rejected)
+    with threshold assertions rather than pinned library output; `acf`
+    and the correlation matrix are compared against hand-worked values.
 - The `quant` extra (NumPy, Pandas, Polars, SciPy, scikit-learn,
   statsmodels) installed in `.venv` per §2.
 
-Not started yet, all still Phase 5: `stats/`, `transforms/`, `recipes/`,
+Not started yet, all still Phase 5: `transforms/`, `recipes/`,
 `registry/`, the leakage split/label helpers, and the measured benchmark.
 The only other numeric helpers remain `@harsh-quant-os/shared`
 (`percentChange`, `safeDivide`, `roundTo`) for display purposes, with unit
