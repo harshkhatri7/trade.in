@@ -53,6 +53,16 @@ model, slippage model, capital, and the limitations that apply.
 A strategy cannot be marked `validated` without out-of-sample and
 walk-forward evidence attached. This is a product rule, not a guideline.
 
+Implementation status: **out-of-sample testing** and **walk-forward
+testing** (rows 1-2) exist as of Phase 7 increment 1 —
+`validation.py` (chronological cut, append-only access ledger,
+held-out evaluated once) and `walkforward.py` (rolling/expanding
+windows, per-window selection, the aggregation defined in §9).
+Parameter sensitivity, regime splits, multiple-testing adjustment and
+the candidate/validated/rejected/archived workflow are **not
+implemented yet**; the look-ahead, leakage and survivorship rows are
+covered by the engine and Phase 5 checks described in §8.
+
 ---
 
 ## 4. Reproducibility
@@ -118,14 +128,18 @@ directory remains the Phase 0 requirements record):
 | The metric set with its assumptions                                           | `metrics.py`          |
 | The report, cost sensitivity and the Wilson interval                          | `report.py`           |
 | The reference strategy                                                        | `reference.py`        |
+| Chronological splits, the held-out-once ledger, train-slice selection          | `validation.py`       |
+| Walk-forward windows, per-window selection, the out-of-sample track            | `walkforward.py`      |
 | `hqos backtest report`                                                        | `../cli.py`           |
 
 Every simulated order is evaluated by `ConfiguredRiskEvaluator`
 before it may fill — the same configured gate the paper-trading path
 will use. Reports are written to `research/reports/`, which Git
 ignores: a simulated result is an artefact of a run, never repository
-content. Out-of-sample splitting, walk-forward testing and regime
-splits belong to Phase 7 and are **not implemented**.
+content. Phase 7 increment 1 added the data-separation and
+walk-forward layers (§9); parameter sensitivity, regime splits,
+deflated metrics, benchmarks/nulls and the promotion workflow are
+**not implemented**.
 
 ---
 
@@ -155,3 +169,57 @@ when the claim stops being true:
   the caveat and the absence of every `FORBIDDEN_CLAIMS` phrase.
 - [x] **Risk evaluation is invoked in the simulated path** — every
   simulated order passes `ConfiguredRiskEvaluator` before it fills.
+
+---
+
+## 9. Phase 7 construction rules (data separation and walk-forward)
+
+Increment 1 fixes these rules; the tests in
+`tests/backtesting/test_validation.py` and
+`tests/backtesting/test_walkforward.py` fail when any of them stops
+being true.
+
+### 9.1 The split (validation.py)
+
+- The cut is **chronological**: the held-out suffix is the last N
+  bars and starts strictly after every training bar. Never shuffled.
+- `AccessLedger` is append-only (recording returns a new ledger) and
+  refuses a **second** held-out touch — the test set consulted twice
+  has become training data (anti-overfitting §2.2), so the second
+  attempt raises instead of being logged.
+- `evaluate_held_out` verifies the data handed in is the split's own
+  pinned slice (same artefact, same span) before running; the run's
+  manifest and §4 numbers come back together with the updated ledger.
+- `select_on_train` runs every declared candidate with a fresh
+  strategy instance and a fresh risk evaluator, scores them under an
+  explicitly named objective, and records every variant, score and
+  manifest. Ties resolve to the first declared candidate and are
+  recorded in `tied` — a tie can never pass as a decisive win.
+
+### 9.2 The walk-forward (walkforward.py)
+
+- Windows are bar positions on the pinned dataset: `train` bars of
+  selection followed immediately by `test` bars of evaluation,
+  advancing `step` bars; `expanding=True` grows the training slice
+  from bar 0 instead. The test slice starts exactly where its own
+  training ends — a gap would hide data, an overlap would leak it.
+- Each window is an **independent simulation**: fresh capital, fresh
+  strategy, fresh risk evaluator; nothing carries between segments.
+- Later windows' training slices contain earlier windows' test
+  segments (they are past data by then). This is the standard
+  walk-forward construction and is stated in every stored summary's
+  notes: the track is **not** a single global hold-out — the
+  held-out-once protocol above is that, and is separate.
+- The out-of-sample track **compounds** each segment's net return as
+  if the full capital were re-deployed at each segment start
+  (`product(1 + r) - 1`, exact in `Decimal`); trade counts are pooled
+  across segments; positive/negative/flat window counts, best and
+  worst windows, and the variants-tried total
+  (`candidates x windows`) sit beside the aggregate so the surface,
+  not the optimum, is what a reader sees (anti-overfitting §2.4).
+- The summary is stored as canonical JSON with every run's manifest
+  embedded. Loading refuses: wrong `kind`, unknown version, edited
+  notes, any manifest whose `run_id` no longer matches its payload,
+  and any track that does not follow from the windows it summarises.
+- Hit rate and Wilson interval appear only when round trips
+  completed; otherwise they are `None`, never a plausible zero.

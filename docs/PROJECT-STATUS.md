@@ -4,7 +4,7 @@
 | -------------------- | ---------------------------------------------- |
 | **Project**          | HARSH QUANT OS                                 |
 | **Version**          | 0.1.0-alpha                                    |
-| **Current phase**    | 6 — Backtesting (complete)                  |
+| **Current phase**    | 7 — Strategy validation (in progress)      |
 | **Live trading**     | **DISABLED**                                   |
 | **Broker**           | **NOT CONNECTED**                              |
 | **Paper trading**    | NOT IMPLEMENTED                                |
@@ -24,7 +24,7 @@
 | --------------------------- | ------------------------------------------------------------ |
 | Git repository              | Initialized, branch `main`, no remote configured             |
 | Repository layout           | `apps/`, `packages/`, `src/`, `agents/`, `docs/`, `tests/`, `scripts/`, `infrastructure/` |
-| Documentation               | Complete for Phases 0–6 (architecture, development, security, operations, research, ADRs) |
+| Documentation               | Complete for Phases 0–6 and Phase 7 increment 1 (architecture, development, security, operations, research, ADRs) |
 | Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log`, `datasets`, `dataset_provenance`, `strategies`, `experiments`, `journal_entries` |
 | Migrations                  | Three revisions (`930c38609bc3` → `3842df3d0db8` → `7c4d9e2a15b3`); empty → head → empty is covered by a test |
 | Backup and restore          | `harsh_quant_os.db.backup` — binary COPY with the schema revision in the manifest; round trip proved by a test |
@@ -42,7 +42,7 @@
 | Dataset store + manifest    | `data/raw`, `data/clean`, `data/quarantine` written content-addressed and atomically; `datasets` carries quality status, version and storage path with three check constraints; provenance appended per acquisition |
 | Market-data adapter         | `KrakenProvider` — Kraken's public OHLC feed behind `HttpTransport` (stdlib client, no key, prices as decimal strings); paging, an unfinished candle and both observed error responses are handled explicitly, and an opt-in live test composes the whole path |
 | Ingestion job               | `hqos data ingest` — fetch → validate → store → register in one command; refuses (exit 1) and quarantines a batch validation rejects; database proved reachable before any network call |
-| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator` |
+| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increment 1 adds chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`) and rolling/expanding walk-forward windows with the aggregated out-of-sample track (`walkforward.py`) |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
@@ -132,9 +132,15 @@ defect.
   the configured risk evaluator on every simulated order, the §3 run
   manifest with byte-identical reproduction, the §4 metric set and the
   §6 report all exist with golden tests; the Phase 6 exit criteria are
-  assessed met below. Out-of-sample splitting, walk-forward testing
-  and regime-split results remain not implemented (Phase 7).
-- Strategy validation and walk-forward testing — Phase 7
+  assessed met below. Regime-split results and parameter-sensitivity
+  surfaces remain not implemented (Phase 7).
+- Strategy validation and walk-forward testing — Phase 7, in progress.
+  Increment 1 (chronological splits, the held-out-once access ledger,
+  train-slice selection recording every variant, walk-forward windows
+  with the documented aggregation and tamper-checked JSON evidence)
+  exists with golden tests; parameter sensitivity, regime splits,
+  deflated metrics, benchmark/shuffled-signal nulls and the promotion
+  workflow remain not implemented.
 - AI research assistant — Phase 8
 - Risk engine — Phase 9
 - Paper trading — Phase 10
@@ -717,8 +723,57 @@ delivered and validated on 2026-09-30:
   simulated order passes `ConfiguredRiskEvaluator` before it may
   fill.
 
-Not started as of Phase 6's close: Phase 7 (strategy validation and
-walk-forward testing).
+**Phase 7 (Strategy validation) is in progress.** Increment 1 — data
+separation and walk-forward — is delivered and validated on
+2026-09-30:
+
+- **Increment 1 — splits, the held-out-once ledger, walk-forward**
+  (`validation.py`, `walkforward.py`): a chronological train/held-out
+  cut that refuses overlap (the held-out suffix must start strictly
+  after every training bar — never shuffled); an append-only
+  `AccessLedger` whose second held-out touch raises instead of being
+  logged, because a test set consulted twice has become training
+  data; `evaluate_held_out` verifying the data handed in really is
+  the split's pinned slice (same artefact, same span) before running,
+  and returning the §3 manifest with the §4 numbers plus the updated
+  ledger; `select_on_train` running every declared candidate with a
+  fresh strategy instance and a fresh risk evaluator under an
+  explicitly named objective, recording every variant, score and
+  manifest so the multiple-testing count is visible, with ties
+  resolved to the first declared candidate and recorded as ties.
+  `walk_forward` generates rolling (or expanding) windows in which
+  each test slice starts exactly where its own training ends, runs
+  every window as an independent simulation (fresh capital, fresh
+  strategy, fresh evaluator), and aggregates the test segments by
+  compounding each segment's net return as if the full capital were
+  re-deployed (`product(1 + r) − 1`, exact in `Decimal`) beside
+  pooled trade counts, positive/negative/flat window counts and the
+  variants-tried total — the surface, not the optimum. The summary
+  is canonical JSON with every run's manifest embedded; loading
+  refuses wrong `kind`, unknown version, edited honesty notes, any
+  manifest whose `run_id` no longer matches its payload, and any
+  aggregate that does not follow from the windows it summarises.
+  Golden traces are hand-computed in the tests: the held-out run
+  ends at `995.399998` with net `-0.004600002` (cross-checked
+  against capital + realised − commission = 1000 − 4.4 − 0.200002),
+  and the walk-forward's window 0 selects the trader at 1004 vs
+  1000 while window 1 selects hold at 1000 vs 996, track
+  compounding to `-0.002` with hit rate `None` (no completed round
+  trips — never a plausible zero).
+- battery: `pytest` **612 passed** + 1 skipped (was 585 at Phase 6's
+  close — +27: 14 split/ledger/selection tests plus 13
+  walk-forward/JSON-evidence tests), `ruff check` clean, `ruff
+  format --check` clean (190 files), `mypy` clean over 144 source
+  files (was 140), prettier, eslint and `tsc` clean, vitest **132
+  passed** (no web changes this increment).
+- not started within Phase 7: parameter sensitivity, regime splits,
+  deflated/multiple-testing headline adjustment, benchmark and
+  shuffled-signal nulls, and the candidate / validated / rejected /
+  archived promotion workflow with its product rule (no `validated`
+  without out-of-sample and walk-forward evidence attached).
+
+Not started as of Phase 7 increment 1: the rest of Phase 7 (above),
+then Phase 8 (AI research).
 
 Carried forward, none of it Phase 6: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and

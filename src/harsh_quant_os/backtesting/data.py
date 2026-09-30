@@ -108,6 +108,35 @@ class BacktestData:
         """The dataset's timeframe value, e.g. ``1m``."""
         return self.bars[0].timeframe.value
 
+    def span(self, start: int, stop: int) -> BacktestData:
+        """The half-open bar span ``[start, stop)``, pinned to this artefact.
+
+        The slice keeps this dataset's id and version: it is the same
+        pinned input, cut — never a new dataset with a borrowed name.
+
+        Args:
+            start: First bar index (inclusive, non-negative).
+            stop: Bar index after the last one (exclusive, at most
+                ``len(bars)``).
+
+        Returns:
+            A new ``BacktestData`` over the requested bars.
+
+        Raises:
+            BacktestError: The span is out of range or empty. An
+                absent window fails here rather than quietly becoming
+                a shorter one.
+        """
+        if start < 0 or stop > len(self.bars) or start >= stop:
+            raise BacktestError(
+                f"bar span [{start}, {stop}) does not exist inside this dataset's "
+                f"bars 0..{len(self.bars)} (a missing slice is refused, never "
+                "clamped)"
+            )
+        return BacktestData(
+            dataset_id=self.dataset_id, version=self.version, bars=self.bars[start:stop]
+        )
+
 
 def load_backtest_data(root: Path, name: str, *, version: str | None = None) -> BacktestData:
     """Load a stored clean dataset as :class:`BacktestData`.
