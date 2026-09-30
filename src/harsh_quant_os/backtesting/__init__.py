@@ -133,6 +133,7 @@ from harsh_quant_os.backtesting.walkforward import (
     WalkForwardSummary,
     WalkForwardWindow,
     WindowOutcome,
+    replay_walk_forward,
     walk_forward,
     walk_forward_windows,
 )
@@ -193,6 +194,7 @@ __all__ = [
     "manifest_from_json",
     "manifest_to_json",
     "parse_decimal",
+    "replay_walk_forward",
     "run_backtest",
     "run_from_manifest",
     "select_on_train",

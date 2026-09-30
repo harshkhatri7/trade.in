@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import re
 import subprocess
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
@@ -267,6 +268,91 @@ def test_reproduces_byte_identically_from_stored_json(tmp_path: Path) -> None:
     assert reproduced == run_backtest(data, Threshold(), _config(), risk=_fresh_risk())
     rebuilt = build_manifest(reproduced, config=_config(), risk=_fresh_risk())
     assert manifest_to_json(rebuilt) == text
+
+
+# ---------------------------------------------------------------------------
+# Window narrowing (Phase 7 increment 2)
+# ---------------------------------------------------------------------------
+
+
+def test_a_windowed_run_reproduces_only_its_own_bars(tmp_path: Path) -> None:
+    data = load_backtest_data(_store(tmp_path), "test.bars")
+    # A run over exactly the middle three bars: its manifest records
+    # their timestamps as the simulation period.
+    window = data.span(1, 4)
+    risk = _fresh_risk()
+    original = run_backtest(window, Threshold(), _config(), risk=risk)
+    manifest = build_manifest(original, config=_config(), risk=risk)
+
+    recorded = manifest["dataset"]
+    assert isinstance(recorded, dict)
+    assert recorded["start"] == data.bars[1].timestamp.isoformat()
+    assert recorded["end"] == data.bars[3].timestamp.isoformat()
+    assert recorded["bars"] == 3
+
+    # Reproduction narrows the pinned dataset to that window and runs
+    # only those bars — byte-identical manifest and all.
+    reproduced = run_from_manifest(tmp_path, manifest, strategy=Threshold(), risk=_fresh_risk())
+    assert reproduced == original
+    assert manifest_to_json(build_manifest(reproduced, config=_config(), risk=_fresh_risk())) == (
+        manifest_to_json(manifest)
+    )
+
+
+def test_a_window_the_pinned_data_does_not_contain_is_refused(tmp_path: Path) -> None:
+    manifest = _manifest_for(tmp_path)
+    recorded = manifest["dataset"]
+    assert isinstance(recorded, dict)
+    # Valid run id, plausible-looking timestamp — the window simply is
+    # not in this dataset, so it is refused rather than clamped to the
+    # nearest bars it could be. (A timestamp *between* two bars, so
+    # the backwards-span check is not what fires.)
+    altered = _tamper(manifest, dataset={**recorded, "start": "2024-01-01T00:00:30+00:00"})
+    with pytest.raises(BacktestError, match="is not a bar of dataset"):
+        run_from_manifest(tmp_path, altered, strategy=Threshold(), risk=_fresh_risk())
+
+    # Endpoints that run backwards are refused too.
+    backwards = _tamper(
+        manifest, dataset={**recorded, "start": recorded["end"], "end": recorded["start"]}
+    )
+    with pytest.raises(BacktestError, match="runs backwards"):
+        run_from_manifest(tmp_path, backwards, strategy=Threshold(), risk=_fresh_risk())
+
+
+def test_a_naive_manifest_timestamp_is_refused(tmp_path: Path) -> None:
+    manifest = _manifest_for(tmp_path)
+    recorded = manifest["dataset"]
+    assert isinstance(recorded, dict)
+    naive = _tamper(manifest, dataset={**recorded, "start": "2024-01-01T00:00:00"})
+    with pytest.raises(BacktestError, match="timezone-aware"):
+        run_from_manifest(tmp_path, naive, strategy=Threshold(), risk=_fresh_risk())
+
+
+def test_between_pins_exact_bounds(tmp_path: Path) -> None:
+    data = load_backtest_data(_store(tmp_path), "test.bars")
+
+    window = data.between(data.bars[1].timestamp, data.bars[3].timestamp)
+    assert [bar.timestamp for bar in window.bars] == [
+        data.bars[index].timestamp for index in (1, 2, 3)
+    ]
+    # A slice is the same pinned artefact, cut — never a new dataset.
+    assert (window.dataset_id, window.version) == (data.dataset_id, data.version)
+
+    # The whole artefact is the no-op a full-run manifest needs.
+    assert data.between(data.start, data.end).bars == data.bars
+    # One bar is a valid (if useless) window.
+    assert len(data.between(data.start, data.start).bars) == 1
+
+    # A bound the data does not hold: refused, never re-matched.
+    with pytest.raises(BacktestError, match=r"span start .* is not a bar"):
+        data.between(data.start - timedelta(days=1), data.end)
+    with pytest.raises(BacktestError, match=r"span end .* is not a bar"):
+        data.between(data.start, data.end + timedelta(days=1))
+    # Backwards, naive: refused with their own reasons.
+    with pytest.raises(BacktestError, match="runs backwards"):
+        data.between(data.end, data.start)
+    with pytest.raises(BacktestError, match="timezone-aware"):
+        data.between(datetime(2024, 1, 1), data.end)
 
 
 def test_an_altered_manifest_is_refused_before_anything_runs(

@@ -38,16 +38,17 @@ summaries before they can be believed.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import cast
 
 from harsh_quant_os.backtesting.data import BacktestData
-from harsh_quant_os.backtesting.engine import BacktestConfig, run_backtest
+from harsh_quant_os.backtesting.engine import BacktestConfig, BacktestResult, run_backtest
 from harsh_quant_os.backtesting.errors import BacktestError
-from harsh_quant_os.backtesting.manifest import build_manifest, compute_run_id
+from harsh_quant_os.backtesting.manifest import build_manifest, compute_run_id, run_from_manifest
 from harsh_quant_os.backtesting.report import wilson_interval
 from harsh_quant_os.backtesting.validation import (
     ENDING_EQUITY,
@@ -66,6 +67,7 @@ __all__ = [
     "WalkForwardSummary",
     "WalkForwardWindow",
     "WindowOutcome",
+    "replay_walk_forward",
     "walk_forward",
     "walk_forward_windows",
 ]
@@ -234,6 +236,27 @@ class WindowOutcome:
     manifest: dict[str, object]
 
 
+def _verify_manifest_bounds(
+    where: str, manifest: dict[str, object], *, start: datetime, end: datetime
+) -> None:
+    """The manifest's recorded simulation period must be this span.
+
+    Every run records its own first/last bars as ``dataset.start`` /
+    ``dataset.end`` (manifest.py), so a manifest attached to a window
+    but describing different bars is evidence that contradicts its own
+    claim — refused rather than left for a reader to reconcile.
+    """
+    record = _as_mapping(_need(manifest, "dataset", where), f"{where}.dataset")
+    for key, want in (("start", start.isoformat()), ("end", end.isoformat())):
+        got = _as_text(_need(record, key, f"{where}.dataset"), f"{where}.dataset.{key}")
+        if got != want:
+            raise BacktestError(
+                f"{where} records dataset.{key} {got!r} but its window spans "
+                f"{want!r}: evidence that disagrees with the layout it claims to "
+                "come from is refused"
+            )
+
+
 # ---------------------------------------------------------------------------
 # The aggregated out-of-sample track
 # ---------------------------------------------------------------------------
@@ -345,6 +368,21 @@ class WalkForwardSummary:
                     f"{self.candidates!r}: every window must race the same "
                     "declared candidates in the same order"
                 )
+            # Evidence that disagrees with the layout it claims to come
+            # from is refused — in memory as well as from JSON.
+            _verify_manifest_bounds(
+                f"window {position}'s test manifest",
+                outcome.manifest,
+                start=outcome.window.test_start,
+                end=outcome.window.test_end,
+            )
+            for run in outcome.selection.runs:
+                _verify_manifest_bounds(
+                    f"window {position}'s {run.label!r} train manifest",
+                    run.manifest,
+                    start=outcome.window.train_start,
+                    end=outcome.window.train_end,
+                )
 
     @property
     def track(self) -> OosTrack:
@@ -442,8 +480,9 @@ def walk_forward(
         numbers, every run's manifest, and the aggregated track.
 
     Raises:
-        BacktestError: No candidates, duplicate labels, or a layout
-            with no window that fits.
+        BacktestError: No candidates, duplicate labels, a layout with
+            no window that fits, or a train/test segment shorter than
+            the engine's two-bar floor.
     """
     if not candidates:
         raise BacktestError("a walk-forward needs at least one candidate")
@@ -452,6 +491,12 @@ def walk_forward(
         raise BacktestError(
             "candidate labels must be distinct: the trace names every variant "
             "it tried, and two identical labels cannot be told apart"
+        )
+    if train < 2 or test < 2:
+        raise BacktestError(
+            f"the engine decides on one bar and fills on the next, so every "
+            f"train and test segment needs at least two bars; got train={train}, "
+            f"test={test} (refusing to produce runs the engine cannot perform)"
         )
     by_label = {candidate.label: candidate for candidate in candidates}
     windows = walk_forward_windows(data, train=train, test=test, step=step, expanding=expanding)
@@ -491,6 +536,101 @@ def walk_forward(
         candidates=labels,
         outcomes=tuple(outcomes),
     )
+
+
+def replay_walk_forward(
+    root: Path,
+    summary: WalkForwardSummary,
+    *,
+    builders: Mapping[str, Candidate],
+    risk_factory: Callable[[], RiskEvaluator],
+    objective: SelectionObjective = ENDING_EQUITY,
+) -> tuple[BacktestResult, ...]:
+    """Re-execute every manifest in a summary and re-derive its numbers.
+
+    The stored evidence is worthless if nobody can run it again, so
+    replay verifies, failing closed at the first mismatch:
+
+    1. The caller's objective is the one the summary ranked under —
+       scores cannot be re-derived under a different rule.
+    2. Every declared candidate has a builder (the manifest proves the
+       built strategy is the one that ran, field for field).
+    3. Every manifest reproduces byte-for-byte: the pinned dataset is
+       loaded, narrowed to the recorded window (exact bounds), run,
+       and compared artefact by artefact
+       (:func:`~harsh_quant_os.backtesting.manifest.run_from_manifest`).
+    4. Every selection score re-derives from the reproduced run.
+    5. Every window's out-of-sample numbers re-derive from the
+       reproduced test run, exactly.
+
+    Args:
+        root: The data root holding ``clean/``.
+        summary: The walk-forward summary (fresh or loaded from JSON).
+        builders: ``label -> candidate`` for every declared candidate;
+            builders for labels the summary does not declare are
+            ignored.
+        risk_factory: A **fresh** evaluator per run.
+        objective: The ranking objective, matching the summary's.
+
+    Returns:
+        The reproduced out-of-sample results, one per window in index
+        order.
+
+    Raises:
+        BacktestError: Objective mismatch, missing builder, a manifest
+            that does not reproduce, a score that does not re-derive,
+            or numbers that do not follow from their manifest.
+        RecipeError: A pinned dataset version is absent or its stored
+            hash no longer matches.
+        ReproductionMismatch: A run executed but produced different
+            artefacts.
+    """
+    if summary.objective != objective.name:
+        raise BacktestError(
+            f"the summary ranked under {summary.objective!r} but replay was "
+            f"given objective {objective.name!r}: scores cannot be re-derived "
+            "under a different rule than the one recorded"
+        )
+    missing = [label for label in summary.candidates if label not in builders]
+    if missing:
+        raise BacktestError(
+            "no builder supplied for candidate(s) "
+            + ", ".join(repr(label) for label in missing)
+            + ": a run whose strategy cannot be rebuilt cannot be replayed"
+        )
+
+    replayed: list[BacktestResult] = []
+    for outcome in summary.outcomes:
+        index = outcome.window.index
+        for run in outcome.selection.runs:
+            result = run_from_manifest(
+                root,
+                run.manifest,
+                strategy=builders[run.label].fresh(),
+                risk=risk_factory(),
+            )
+            score = objective(result)
+            if score != run.score:
+                raise BacktestError(
+                    f"window {index}: candidate {run.label!r} scored {run.score} "
+                    f"in the summary but {score} on replay — the stored score "
+                    "does not follow from the stored manifest"
+                )
+        test_result = run_from_manifest(
+            root,
+            outcome.manifest,
+            strategy=builders[outcome.selection.selected].fresh(),
+            risk=risk_factory(),
+        )
+        numbers = OutOfSampleNumbers.from_result(test_result)
+        if numbers != outcome.out_of_sample:
+            raise BacktestError(
+                f"window {index}: out-of-sample numbers did not reproduce "
+                f"(summary: {outcome.out_of_sample}, replay: {numbers}) — the "
+                "stored evidence does not follow from the stored manifest"
+            )
+        replayed.append(test_result)
+    return tuple(replayed)
 
 
 # ---------------------------------------------------------------------------

@@ -29,7 +29,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
+from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -38,14 +41,21 @@ from harsh_quant_os.backtesting import (
     BacktestError,
     Candidate,
     DecisionContext,
+    OutOfSampleNumbers,
+    SelectionObjective,
+    SelectionTrace,
     WalkForwardSummary,
     WindowOutcome,
     compute_run_id,
+    load_backtest_data,
+    replay_walk_forward,
     walk_forward,
     walk_forward_windows,
     wilson_interval,
 )
 from tests.backtesting.test_engine import ApproveAll, Threshold, _config, _data
+from tests.backtesting.test_manifest import GOLDEN_ROWS
+from tests.quant.test_recipes import _csv_bytes, _write_store
 
 pytestmark = pytest.mark.backtesting
 
@@ -290,6 +300,16 @@ def test_walk_forward_refusals_are_explicit() -> None:
         _walk(train=4, test=4)
 
 
+def test_walk_forward_refuses_segments_the_engine_cannot_run() -> None:
+    # The engine decides on one bar and fills on the next: a one-bar
+    # segment is refused here rather than failing deep inside a run
+    # (or, worse, being silently padded).
+    with pytest.raises(BacktestError, match="at least two bars"):
+        _walk(train=1, test=2)
+    with pytest.raises(BacktestError, match="at least two bars"):
+        _walk(train=2, test=1)
+
+
 def test_a_summary_that_cannot_be_true_is_refused() -> None:
     summary = _walk()
     with pytest.raises(BacktestError, match="at least one window"):
@@ -417,3 +437,115 @@ def test_a_tampered_summary_is_refused() -> None:
     # Not JSON at all.
     with pytest.raises(BacktestError, match="not valid JSON"):
         WalkForwardSummary.from_json("{not json")
+
+
+# ---------------------------------------------------------------------------
+# Evidence that contradicts its own layout
+# ---------------------------------------------------------------------------
+
+
+def test_evidence_that_disagrees_with_its_window_is_refused() -> None:
+    summary = _walk()
+    outcome = summary.outcomes[0]
+
+    # A window stretched off the span its manifest records (the end
+    # moves, so the window's own chronology checks still hold — what
+    # must fail is the evidence disagreeing with it).
+    stretched = replace(
+        outcome,
+        window=replace(outcome.window, test_end=outcome.window.test_end + timedelta(hours=1)),
+    )
+    with pytest.raises(BacktestError, match="disagrees with the layout"):
+        replace(summary, outcomes=(stretched, *summary.outcomes[1:]))
+
+    # A training manifest claiming different bars than its slice ran.
+    dataset_record = outcome.selection.runs[0].manifest["dataset"]
+    assert isinstance(dataset_record, dict)
+    impostor_manifest = dict(outcome.selection.runs[0].manifest)
+    impostor_manifest["dataset"] = {**dataset_record, "start": dataset_record["end"]}
+    impostor = replace(outcome.selection.runs[0], manifest=impostor_manifest)
+    trace = replace(outcome.selection, runs=(impostor, *outcome.selection.runs[1:]))
+    with pytest.raises(BacktestError, match="disagrees with the layout"):
+        replace(summary, outcomes=(replace(outcome, selection=trace), *summary.outcomes[1:]))
+
+
+# ---------------------------------------------------------------------------
+# Replay: evidence that can be run again
+# ---------------------------------------------------------------------------
+
+
+def _stored_walk(tmp_path: Path) -> tuple[WalkForwardSummary, dict[str, Candidate]]:
+    """The golden walk-forward over the golden bars *as stored*."""
+    _write_store(tmp_path, "test.bars", _csv_bytes(GOLDEN_ROWS))
+    data = load_backtest_data(tmp_path, "test.bars")
+    summary = walk_forward(
+        data,
+        candidates=[_HOLD, _BUY],
+        config=_config(commission_bps="0", slippage_bps="0"),
+        risk_factory=ApproveAll,
+        train=2,
+        test=2,
+        step=1,
+    )
+    return summary, {"hold": _HOLD, "buy": _BUY}
+
+
+def test_every_manifest_in_the_summary_replays(tmp_path: Path) -> None:
+    summary, builders = _stored_walk(tmp_path)
+    # The *stored* JSON form replays: evidence that survives storage.
+    loaded = WalkForwardSummary.from_json(summary.to_json())
+
+    replayed = replay_walk_forward(tmp_path, loaded, builders=builders, risk_factory=ApproveAll)
+
+    # One reproduced out-of-sample run per window, with exactly the
+    # numbers the summary stored beside its manifest.
+    assert len(replayed) == len(loaded.outcomes)
+    for outcome, result in zip(loaded.outcomes, replayed, strict=True):
+        assert OutOfSampleNumbers.from_result(result) == outcome.out_of_sample
+    assert loaded.track.compounded_net_return == Decimal("-0.002")
+
+
+def test_replay_refuses_what_it_cannot_re_derive(tmp_path: Path) -> None:
+    summary, builders = _stored_walk(tmp_path)
+
+    # A builder for every declared candidate, or the run cannot exist.
+    with pytest.raises(BacktestError, match="no builder supplied"):
+        replay_walk_forward(tmp_path, summary, builders={"hold": _HOLD}, risk_factory=ApproveAll)
+
+    # The objective the summary ranked under, or scores mean nothing.
+    different = SelectionObjective(name="fewest_fills", score=lambda result: Decimal(0))
+    with pytest.raises(BacktestError, match="cannot be re-derived"):
+        replay_walk_forward(
+            tmp_path,
+            summary,
+            builders=builders,
+            risk_factory=ApproveAll,
+            objective=different,
+        )
+
+    # A score that does not follow from its manifest: window 0's hold
+    # run remembered as 1003 instead of 1000 (still below buy's 1004,
+    # so the trace alone still looks consistent).
+    window0 = summary.outcomes[0]
+    inflated = replace(window0.selection.runs[0], score=Decimal(1003))
+    trace = SelectionTrace(
+        selected=window0.selection.selected,
+        tied=window0.selection.tied,
+        objective=window0.selection.objective,
+        runs=(inflated, *window0.selection.runs[1:]),
+    )
+    misremembered = replace(
+        summary, outcomes=(replace(window0, selection=trace), *summary.outcomes[1:])
+    )
+    with pytest.raises(BacktestError, match="does not follow from the stored manifest"):
+        replay_walk_forward(tmp_path, misremembered, builders=builders, risk_factory=ApproveAll)
+
+    # Numbers that do not follow from their manifest.
+    window1 = summary.outcomes[1]
+    optimistic = replace(window1.out_of_sample, net_return=Decimal("-0.5"))
+    dreamt = replace(
+        summary,
+        outcomes=(summary.outcomes[0], replace(window1, out_of_sample=optimistic)),
+    )
+    with pytest.raises(BacktestError, match="did not reproduce"):
+        replay_walk_forward(tmp_path, dreamt, builders=builders, risk_factory=ApproveAll)

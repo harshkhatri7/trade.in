@@ -54,12 +54,13 @@ A strategy cannot be marked `validated` without out-of-sample and
 walk-forward evidence attached. This is a product rule, not a guideline.
 
 Implementation status: **out-of-sample testing** and **walk-forward
-testing** (rows 1-2) exist as of Phase 7 increment 1 —
+testing** (rows 1-2) exist as of Phase 7 increments 1-2 —
 `validation.py` (chronological cut, append-only access ledger,
 held-out evaluated once) and `walkforward.py` (rolling/expanding
-windows, per-window selection, the aggregation defined in §9).
-Parameter sensitivity, regime splits, multiple-testing adjustment and
-the candidate/validated/rejected/archived workflow are **not
+windows, per-window selection, the aggregation defined in §9, and
+replay of every stored manifest). Parameter sensitivity, regime
+splits, multiple-testing adjustment and the
+candidate/validated/rejected/archived workflow are **not
 implemented yet**; the look-ahead, leakage and survivorship rows are
 covered by the engine and Phase 5 checks described in §8.
 
@@ -129,7 +130,7 @@ directory remains the Phase 0 requirements record):
 | The report, cost sensitivity and the Wilson interval                          | `report.py`           |
 | The reference strategy                                                        | `reference.py`        |
 | Chronological splits, the held-out-once ledger, train-slice selection          | `validation.py`       |
-| Walk-forward windows, per-window selection, the out-of-sample track            | `walkforward.py`      |
+| Walk-forward windows, per-window selection, the out-of-sample track, replay    | `walkforward.py`      |
 | `hqos backtest report`                                                        | `../cli.py`           |
 
 Every simulated order is evaluated by `ConfiguredRiskEvaluator`
@@ -223,3 +224,32 @@ being true.
   and any track that does not follow from the windows it summarises.
 - Hit rate and Wilson interval appear only when round trips
   completed; otherwise they are `None`, never a plausible zero.
+
+### 9.3 Replay and windowed manifests (increment 2)
+
+- Every manifest records its own first and last bars as
+  `dataset.start` / `dataset.end` (from its own equity curve, one
+  mark per bar). `run_from_manifest` narrows the pinned dataset to
+  exactly that span before re-running: a full-artefact run is the
+  no-op it should be, a walk-forward window re-runs only its own
+  bars. Both bounds must be exact bar timestamps of the pinned data
+  — an unknown window, a backwards span or a naive timestamp is
+  refused (`BacktestData.between`), never clamped or re-matched to
+  nearby bars.
+- A summary whose manifests record spans that disagree with its own
+  window layout is refused at construction: evidence that
+  contradicts the claim it is attached to cannot be reconciled by a
+  reader, so the reader is never asked to.
+- `replay_walk_forward` re-executes **every** manifest in a stored
+  summary — each candidate's training run and each window's test
+  run — and re-derives what can be derived: every selection score
+  under the recorded objective, and every window's out-of-sample
+  numbers from the reproduced run. It fails closed at the first
+  mismatch: a missing builder, a different objective than the
+  summary ranked under, a manifest that does not reproduce, a score
+  that does not follow from its manifest, numbers that do not
+  follow from theirs.
+- The engine's floor applies to every segment: one bar to decide on
+  and the next to fill on means each train and test slice needs at
+  least two bars, so `walk_forward` refuses shorter layouts up
+  front instead of failing deep inside a run.

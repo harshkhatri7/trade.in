@@ -47,6 +47,7 @@ import json
 import re
 import subprocess
 from collections.abc import Mapping
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -378,6 +379,18 @@ def _exact(value: object, key: str) -> Decimal:
     return parsed
 
 
+def _time(value: object, key: str) -> datetime:
+    """Parse a manifest's ISO timestamp — naive or malformed is refused."""
+    text = _expect_str(value, key)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as error:
+        raise BacktestError(f"manifest key {key!r} is not an ISO timestamp: {text!r}") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise BacktestError(f"manifest key {key!r} must be timezone-aware: {text!r}")
+    return parsed
+
+
 def _commission_from(record: Mapping[str, object]) -> CommissionModel:
     kind = _expect_str(_require(record, "type"), "commission.type")
     if kind == "bps_commission":
@@ -446,9 +459,16 @@ def run_from_manifest(
     2. Check the engine actually supports the recorded intrabar rule.
     3. Load the dataset pinned by id **and** version — the store
        recomputes the artefact hash, so changed data fails here.
-    4. Rebuild capital and both cost models from the closed whitelist.
-    5. Verify the supplied strategy matches the record field-for-field.
-    6. Run, then compare the three artefact hashes; any difference
+    4. Narrow the dataset to the recorded simulation period
+       (``dataset.start``/``dataset.end``, the run's own first and
+       last bars). For a full-artefact run this is the no-op it
+       should be; for a walk-forward window it re-runs only that
+       window's bars. Both bounds must be exact bar timestamps of the
+       pinned data — an unknown window is refused, never clamped or
+       re-matched to nearby bars.
+    5. Rebuild capital and both cost models from the closed whitelist.
+    6. Verify the supplied strategy matches the record field-for-field.
+    7. Run, then compare the three artefact hashes; any difference
        raises :class:`ReproductionMismatch`.
 
     Args:
@@ -466,7 +486,8 @@ def run_from_manifest(
 
     Raises:
         BacktestError: Missing/ill-typed keys, run-id mismatch, unknown
-            model, strategy mismatch, or an unsupported intrabar rule.
+            model, strategy mismatch, an unsupported intrabar rule, or
+            a recorded window the pinned data does not contain.
         RecipeError: The pinned dataset version is absent or its
             stored hash no longer matches.
         ReproductionMismatch: The run executed but produced different
@@ -501,6 +522,14 @@ def run_from_manifest(
         root,
         _expect_str(_require(dataset_record, "id"), "dataset.id"),
         version=_expect_str(_require(dataset_record, "version"), "dataset.version"),
+    )
+    # The recorded simulation period comes from the run's own equity
+    # curve (one mark per bar): a full run spans the artefact, a
+    # windowed run spans exactly its bars. Bounds are matched exactly;
+    # a window the data does not hold fails here (step 4).
+    dataset = dataset.between(
+        _time(_require(dataset_record, "start"), "dataset.start"),
+        _time(_require(dataset_record, "end"), "dataset.end"),
     )
 
     config = BacktestConfig(

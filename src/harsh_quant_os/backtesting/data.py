@@ -137,6 +137,56 @@ class BacktestData:
             dataset_id=self.dataset_id, version=self.version, bars=self.bars[start:stop]
         )
 
+    def between(self, start: datetime, end: datetime) -> BacktestData:
+        """The inclusive timestamp span ``start..end``, pinned to this artefact.
+
+        Both endpoints must be exact bar timestamps of *this* dataset:
+        a recorded window whose bounds are not in the data fails here
+        rather than being re-matched to the nearest bars, and a span
+        covering the whole artefact returns the same bars unchanged
+        (which is how a full-run manifest replays as a no-op slice).
+
+        Args:
+            start: Timestamp of the first bar (inclusive).
+            end: Timestamp of the last bar (inclusive).
+
+        Returns:
+            A new ``BacktestData`` over the bars in the span.
+
+        Raises:
+            BacktestError: A naive timestamp, ``start`` after ``end``,
+                or either endpoint not an exact bar timestamp of this
+                dataset.
+        """
+        for label, value in (("start", start), ("end", end)):
+            if value.tzinfo is None or value.utcoffset() is None:
+                raise BacktestError(
+                    f"span {label} must be timezone-aware, got {value.isoformat()!r} "
+                    "(a naive timestamp is refused, never assumed UTC)"
+                )
+        if start > end:
+            raise BacktestError(
+                f"span {start.isoformat()} to {end.isoformat()} runs backwards "
+                "(refusing to read it as the other direction)"
+            )
+        first = next((i for i, bar in enumerate(self.bars) if bar.timestamp == start), None)
+        if first is None:
+            raise BacktestError(
+                f"span start {start.isoformat()} is not a bar of dataset "
+                f"{self.dataset_id}@{self.version[:12]} (an unknown window is "
+                "refused, never re-matched to nearby bars)"
+            )
+        last = next((i for i, bar in enumerate(self.bars) if bar.timestamp == end), None)
+        if last is None:
+            raise BacktestError(
+                f"span end {end.isoformat()} is not a bar of dataset "
+                f"{self.dataset_id}@{self.version[:12]} (an unknown window is "
+                "refused, never re-matched to nearby bars)"
+            )
+        # Timestamps strictly increase (validated on construction), so
+        # start <= end implies first <= last: the slice is non-empty.
+        return self.span(first, last + 1)
+
 
 def load_backtest_data(root: Path, name: str, *, version: str | None = None) -> BacktestData:
     """Load a stored clean dataset as :class:`BacktestData`.
