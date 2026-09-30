@@ -62,8 +62,11 @@ selection, the aggregation defined in §9, and replay of every stored
 manifest), `sensitivity.py` (the declared grid, every cell,
 adjacency counts, §9.4) and `regimes.py` (causal labels with
 declared thresholds, entry-time attribution, §9.5).
-Multiple-testing adjustment and the
-candidate/validated/rejected/archived workflow are **not
+**Multiple-testing adjustment** exists as of Phase 7 increment 6:
+`deflated.py` prices a recorded shot count into the headline (§9.7),
+and the report renders the count when one is supplied and says
+"not recorded" when none is — a count is never invented. The
+candidate/validated/rejected/archived workflow is **not
 implemented yet**; the look-ahead, leakage and survivorship rows are
 covered by the engine and Phase 5 checks described in §8.
 
@@ -138,17 +141,18 @@ directory remains the Phase 0 requirements record):
 | Causal regime labels, entry-time attribution, the split and its honesty flags | `regimes.py`          |
 | The same-universe passive reference: first fill, fixed-point sizing, identities | `benchmark.py`        |
 | The seeded shuffled-signal null: capture, permutation, counts reported as counts | `null.py`             |
+| The deflated Sharpe: a recorded shot count priced into the headline, self-accounting | `deflated.py` |
 | `hqos backtest report`                                                        | `../cli.py`           |
 
 Every simulated order is evaluated by `ConfiguredRiskEvaluator`
 before it may fill — the same configured gate the paper-trading path
 will use. Reports are written to `research/reports/`, which Git
 ignores: a simulated result is an artefact of a run, never repository
-content. Phase 7 increments 1–5 added the data-separation and
+content. Phase 7 increments 1–6 added the data-separation and
 walk-forward layers, windowed replay (§9), the parameter-sensitivity
-surface (§9.4), the causal regime split (§9.5) and the benchmark and
-shuffled-signal null (§9.6); deflated metrics and the promotion
-workflow are **not implemented**.
+surface (§9.4), the causal regime split (§9.5), the benchmark and
+shuffled-signal null (§9.6) and the §2.5 deflated headline (§9.7);
+the promotion workflow is **not implemented**.
 
 ---
 
@@ -366,3 +370,51 @@ being true.
   no edge. A value near 1 is consistent with the timing carrying
   nothing, which is what anti-overfitting §2.6 asks the reader to
   consider.
+
+### 9.7 The deflated headline (deflated.py, increment 6)
+
+- **The count is an input, never a default**: `deflated_sharpe`
+  takes the shot count explicitly — how many variants were tried,
+  `len(trace.runs)` from a `SelectionTrace` or the honest record of
+  every attempt (anti-overfitting §2.5) — because a default count
+  would be a guess wearing a number's clothes. Zero, a non-int and a
+  `bool` are refused.
+- **The model, stated so it can be checked**: per-period returns —
+  the same per-bar equity returns `VolatilityStats` uses, in
+  per-period units (the report's annualised Sharpe is this figure
+  times `sqrt(bar frequency)`), population moments (ddof=0, the
+  quant package's convention) — with
+  `V[SR] = (1 − skew·SR + (kurt − 1)/4·SR²)/(T − 1)` where `kurt`
+  is Pearson (3 for a normal); `SR0 = sqrt(V[SR])` times Blom's
+  expected maximum of `trials` standard normals (exactly 0 for one
+  shot, the max of one draw having mean 0); and
+  `Φ((SR − SR0)/sqrt(V[SR]))` through the stdlib
+  `statistics.NormalDist` — no new dependency. Statistics run in
+  `float` like the quant package; returns are `Decimal` on the way
+  in, and money never leaves `Decimal` anywhere else.
+- **A headline that cannot account for itself is refused**: the
+  dataclass re-derives SR0 and the deflated value from its own
+  stored fields and raises if either differs, on top of the floors
+  (at least one recorded shot, at least two periods, a positive
+  estimator variance, finite figures, the deflated value within
+  [0, 1], a non-empty note). A flat series is refused too: with no
+  dispersion the Sharpe is not a number, and infinity is not
+  reported in its place.
+- **The report renders what was computed and nothing else**: with a
+  `deflated` argument the Uncertainty line records the count, a
+  "Multiple-testing adjustment" section carries every figure beside
+  the honesty note — the deflated value is the normal-model
+  probability that the best of the recorded shots under a no-skill
+  null would fall short of this Sharpe, **not the probability that
+  the strategy works** — and the standing limitation states the
+  model's assumptions (iid normal shots, a complete count). Without
+  one, the report says "Variants tried: not recorded for this run",
+  exactly as before: a count is never invented to fill the section.
+- Golden traces hand-computed: a symmetric series (+0.01, −0.01,
+  +0.01, −0.01) has Sharpe exactly 0 and, with one recorded shot,
+  SR0 exactly 0 — so the deflation is Φ(0) = 0.5, bit for bit;
+  doubling every return doubles mean and stdev alike, so the whole
+  headline returns identical (the deflation is scale-free); the
+  golden run's five equity points give four returns, and its
+  declining curve (1000 → 988) deflates below a half; more shots
+  strictly raise SR0 and strictly lower the same headline.

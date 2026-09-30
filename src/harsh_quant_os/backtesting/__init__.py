@@ -52,6 +52,10 @@ The pieces:
 - :mod:`~harsh_quant_os.backtesting.null` — the §2.6 shuffled-signal
   null: the same signals re-timed by a recorded seed, with counts
   reported as counts rather than as significance.
+- :mod:`~harsh_quant_os.backtesting.deflated` — the §2.5 deflated
+  Sharpe: the headline prices how many shots were taken, from a
+  recorded count, with its model stated so the arithmetic can be
+  checked.
 
 Window coverage (methodology §5's data-side check) is
 :func:`~harsh_quant_os.backtesting.data.window_coverage`: missing bars
@@ -79,6 +83,11 @@ from harsh_quant_os.backtesting.data import (
     WindowCoverage,
     load_backtest_data,
     window_coverage,
+)
+from harsh_quant_os.backtesting.deflated import (
+    DeflatedSharpe,
+    deflated_from_result,
+    deflated_sharpe,
 )
 from harsh_quant_os.backtesting.engine import (
     NEXT_BAR_OPEN,
@@ -195,6 +204,7 @@ __all__ = [
     "CostStats",
     "DataSplit",
     "DecisionContext",
+    "DeflatedSharpe",
     "DrawdownStats",
     "EquityPoint",
     "ExposureStats",
@@ -234,6 +244,8 @@ __all__ = [
     "compute_metrics",
     "compute_run_id",
     "cost_sensitivity",
+    "deflated_from_result",
+    "deflated_sharpe",
     "evaluate_held_out",
     "load_backtest_data",
     "manifest_from_json",

@@ -37,6 +37,7 @@ from harsh_quant_os.backtesting import (
     build_report,
     compute_metrics,
     cost_sensitivity,
+    deflated_from_result,
     run_backtest,
     wilson_interval,
     window_coverage,
@@ -411,3 +412,27 @@ def test_the_uncertainty_section_states_its_assumptions() -> None:
     assert "Wilson 95% interval" in uncertainty
     assert "assumes independent, identically distributed trials" in uncertainty
     assert f"against the {SMALL_SAMPLE_TRADE_THRESHOLD}-trade threshold" in uncertainty
+
+
+def test_the_report_prices_a_recorded_shot_count_when_supplied() -> None:
+    result, manifest, metrics, coverage = _parts()
+    deflated = deflated_from_result(result, trials=6)
+    text = build_report(
+        result,
+        manifest=manifest,
+        metrics=metrics,
+        coverage=coverage,
+        deflated=deflated,
+    )
+
+    assert "## Multiple-testing adjustment (anti-overfitting §2.5)" in text
+    assert "Variants tried: 6 (recorded - see the multiple-testing" in text
+    assert "Variants tried: not recorded for this run." not in text
+    assert "multiple-testing context is unavailable" not in text
+    assert "| variants tried (shots) | 6 |" in text
+    assert f"| deflated Sharpe | {deflated.deflated} |" in text
+    assert "not the probability that the strategy works" in text
+    # The model rides in the limitations, with what it assumes:
+    assert "iid normal shots and a complete count" in text
+    # The count is never invented elsewhere: no other line claims one.
+    assert text.count("Variants tried") == 1

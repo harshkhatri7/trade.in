@@ -109,11 +109,15 @@ Phases 6 and 7. As of Phase 7 increment 4, data separation (§2.2),
 walk-forward testing (§2.3), parameter sensitivity (§2.4) and regime
 robustness (§2.7) exist in `src/harsh_quant_os/backtesting/` with
 golden tests. The benchmark and shuffled-signal nulls (§2.6) exist
-as of Phase 7 increment 5. Multiple-testing adjustment (§2.5), the
-promotion gates (§3) and the
-independent critique (§2.10) do not exist yet, and §2.1
-pre-registration, §2.8's complexity budget and §2.9's negative-result
-retention are documented protocols here rather than automation. No
-strategy or result is stored in this repository: a backtest's
-artefacts are run manifests and reports, never repository content
-(backtesting.md §7).
+as of Phase 7 increment 5. Multiple-testing adjustment (§2.5) exists
+as of Phase 7 increment 6: `deflated.py`'s deflated Sharpe takes the
+recorded shot count explicitly (there is no default count) and prices
+it into the headline, and the report renders the count when one is
+supplied and says "not recorded" when none is — the count is a
+record claim, never a guess (backtesting.md §9.7). The promotion
+gates (§3) and the independent critique (§2.10) do not exist yet,
+and §2.1 pre-registration, §2.8's complexity budget and §2.9's
+negative-result retention are documented protocols here rather than
+automation. No strategy or result is stored in this repository: a
+backtest's artefacts are run manifests and reports, never repository
+content (backtesting.md §7).

@@ -40,6 +40,7 @@ from decimal import Decimal
 
 from harsh_quant_os.backtesting.costs import BpsCommission, FixedBpsSlippage
 from harsh_quant_os.backtesting.data import BacktestData, WindowCoverage
+from harsh_quant_os.backtesting.deflated import DeflatedSharpe
 from harsh_quant_os.backtesting.engine import BacktestConfig, BacktestResult, run_backtest
 from harsh_quant_os.backtesting.errors import BacktestError
 from harsh_quant_os.backtesting.metrics import RunMetrics
@@ -268,6 +269,7 @@ def build_report(
     coverage: WindowCoverage,
     sensitivity: Sequence[CostSensitivityPoint] | None = None,
     strategy_note: str | None = None,
+    deflated: DeflatedSharpe | None = None,
 ) -> str:
     """Render one run as a markdown report, limitations first.
 
@@ -283,6 +285,12 @@ def build_report(
         strategy_note: Extra honest context about the strategy (e.g.
             that its parameters are illustrative), rendered as a
             limitation.
+        deflated: The pre-computed §2.5 multiple-testing adjustment
+            (from :func:`~harsh_quant_os.backtesting.deflated.deflated_from_result`
+            with the recorded shot count), or ``None`` — the report
+            then says the variant count was not recorded, exactly as
+            before. A count is never invented: only what was computed
+            and passed in is rendered.
 
     Returns:
         Markdown text. No line of it asserts anything about outcomes
@@ -337,11 +345,20 @@ def build_report(
         "score interval for the hit rate instead (it assumes independent "
         "trials)."
     )
-    limitations.append(
-        "The number of strategy variants tried before this run was not "
-        "recorded, so its multiple-testing context is unavailable "
-        "(methodology §5, selection bias)."
-    )
+    if deflated is None:
+        limitations.append(
+            "The number of strategy variants tried before this run was not "
+            "recorded, so its multiple-testing context is unavailable "
+            "(methodology §5, selection bias)."
+        )
+    else:
+        limitations.append(
+            f"Multiple-testing: {deflated.trials} variant(s) were tried "
+            f"before this run and the count was recorded (anti-overfitting "
+            f"§2.5), so the deflated Sharpe below prices it. The deflation "
+            f"is a model result — iid normal shots and a complete count — "
+            f"not a property of this sample."
+        )
     limitations.append(
         "Borrow, financing and funding are not modelled: costs are the "
         "recorded commission and slippage only."
@@ -550,6 +567,28 @@ def build_report(
         + f" Bars: {bars}."
     )
 
+    # ---- multiple-testing adjustment (anti-overfitting §2.5) -----------
+    if deflated is None:
+        variants_line = "not recorded for this run."
+        multiple_testing_text = ""
+    else:
+        variants_line = f"{deflated.trials} (recorded - see the multiple-testing adjustment below)."
+        multiple_testing_text = (
+            "## Multiple-testing adjustment (anti-overfitting §2.5)\n\n"
+            f"{deflated.note}\n\n"
+            "| figure | value |\n"
+            "| --- | --- |\n"
+            f"| variants tried ({deflated.shots_text}) | {deflated.trials} |\n"
+            f"| periods the estimate stands on | {deflated.periods} |\n"
+            f"| per-period Sharpe (observed) | {deflated.sharpe} |\n"
+            f"| best-of-{deflated.trials} null expectation (SR0) | "
+            f"{deflated.null_expected_max} |\n"
+            f"| Sharpe estimator variance V[SR] | {deflated.sr_variance} |\n"
+            f"| return skewness (population) | {deflated.skewness} |\n"
+            f"| return kurtosis (population, 3 = normal) | {deflated.kurtosis} |\n"
+            f"| deflated Sharpe | {deflated.deflated} |\n\n"
+        )
+
     # ---- cost sensitivity ---------------------------------------------
     if sensitivity is None:
         sensitivity_text = "_Cost sensitivity was not computed for this report_ (see limitations)."
@@ -633,9 +672,9 @@ is the same data.
 
 - {interval_line}
 - {small_sample_line}
-- Variants tried: not recorded for this run.
+- Variants tried: {variants_line}
 
-## Cost sensitivity
+{multiple_testing_text}## Cost sensitivity
 
 {sensitivity_text}
 

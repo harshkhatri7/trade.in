@@ -132,10 +132,12 @@ Implemented for Phase 6 in `src/harsh_quant_os/backtesting/`:
   survivorship (single-instrument membership recorded as-of in the
   manifest), cost optimism (`cost_sensitivity` re-runs the same
   strategy at 0.5x/1x/2x) and small samples (the trade-count threshold
-  is named where it is used). Regime splits, walk-forward results and
-  multiple-testing adjustment need Phase 7's workflow and are **not
-  implemented** — the report states that the number of variants tried
-  was not recorded rather than implying it was;
+  is named where it is used). Regime splits (backtesting.md §9.5),
+  walk-forward results (§9) and the multiple-testing adjustment
+  (§9.7) exist as of Phase 7 increments 1-6; the report states the
+  number of variants tried only as it was recorded — "not recorded"
+  when no count was supplied with the deflated figure, never a
+  count implied or invented;
 - **§6** — `report.py`: limitations first, the manifest attached,
   assumptions separated from measured results, conditional language
   and the standard caveat. `tests/backtesting/test_report.py` asserts

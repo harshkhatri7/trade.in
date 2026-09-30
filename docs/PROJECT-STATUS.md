@@ -42,7 +42,7 @@
 | Dataset store + manifest    | `data/raw`, `data/clean`, `data/quarantine` written content-addressed and atomically; `datasets` carries quality status, version and storage path with three check constraints; provenance appended per acquisition |
 | Market-data adapter         | `KrakenProvider` — Kraken's public OHLC feed behind `HttpTransport` (stdlib client, no key, prices as decimal strings); paging, an unfinished candle and both observed error responses are handled explicitly, and an opt-in live test composes the whole path |
 | Ingestion job               | `hqos data ingest` — fetch → validate → store → register in one command; refuses (exit 1) and quarantines a batch validation rejects; database proved reachable before any network call |
-| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increments 1–5 add chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`), rolling/expanding walk-forward windows with the aggregated out-of-sample track, windowed manifest re-execution and full walk-forward replay (`walkforward.py`), the declared parameter-sensitivity surface with its adjacency statistics and cell replay (`sensitivity.py`), causal regime segmentation with entry-time attribution and the regime-specific flag (`regimes.py`), and the anti-overfitting §2.6 comparison set — a same-universe passive benchmark (`benchmark.py`) and the seeded shuffled-signal null (`null.py`) |
+| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increments 1–5 add chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`), rolling/expanding walk-forward windows with the aggregated out-of-sample track, windowed manifest re-execution and full walk-forward replay (`walkforward.py`), the declared parameter-sensitivity surface with its adjacency statistics and cell replay (`sensitivity.py`), causal regime segmentation with entry-time attribution and the regime-specific flag (`regimes.py`), and the anti-overfitting §2.6 comparison set — a same-universe passive benchmark (`benchmark.py`) and the seeded shuffled-signal null (`null.py`), and the anti-overfitting §2.5 deflated Sharpe (`deflated.py`) that prices the recorded shot count into the report's headline |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
@@ -136,16 +136,17 @@ defect.
   regime splits, the passive benchmark and the shuffled-signal null
   exist as of Phase 7 increments 3-5.
 - Strategy validation and walk-forward testing — Phase 7, in progress.
-  Increments 1–5 (chronological splits, the held-out-once access
+  Increments 1–6 (chronological splits, the held-out-once access
   ledger, train-slice selection recording every variant, walk-forward
   windows with the documented aggregation, tamper-checked JSON
   evidence, windowed manifest re-execution, full replay of every
   stored manifest, the declared parameter-sensitivity surface with
   every cell, adjacency counts and cell replay, causal regime
   segmentation with entry-time attribution and the regime-specific
-  flag, and the §2.6 passive benchmark and shuffled-signal null)
-  exist with golden tests; deflated metrics and the promotion
-  workflow remain not implemented.
+  flag, the §2.6 passive benchmark and shuffled-signal null, and the
+  §2.5 deflated Sharpe with the shot count recorded in the report)
+  exist with golden tests; the promotion workflow remains not
+  implemented.
 - AI research assistant — Phase 8
 - Risk engine — Phase 9
 - Paper trading — Phase 10
@@ -728,11 +729,11 @@ delivered and validated on 2026-09-30:
   simulated order passes `ConfiguredRiskEvaluator` before it may
   fill.
 
-**Phase 7 (Strategy validation) is in progress.** Increments 1–5 —
+**Phase 7 (Strategy validation) is in progress.** Increments 1–6 —
 data separation, walk-forward, replayable windowed evidence, the
-parameter-sensitivity surface, regime segmentation and the
-benchmark/null comparison set — are delivered and validated on
-2026-09-30:
+parameter-sensitivity surface, regime segmentation, the
+benchmark/null comparison set and the deflated headline — are
+delivered and validated on 2026-09-30:
 
 - **Increment 1 — splits, the held-out-once ledger, walk-forward**
   (`validation.py`, `walkforward.py`): a chronological train/held-out
@@ -891,13 +892,45 @@ benchmark/null comparison set — are delivered and validated on
   tests incl. seeded replay and count semantics); `ruff check`/
   `ruff format` clean (198 files), `mypy` clean (152 source files),
   prettier, eslint and `tsc` clean, vitest **132 passed**.
-- not started within Phase 7:
-  deflated/multiple-testing headline adjustment and the
-  candidate / validated / rejected /
+- **Increment 6 — the §2.5 deflated headline** (`deflated.py`,
+  `build_report`'s optional `deflated`): the headline now prices how
+  many shots were taken. `deflated_sharpe` takes the per-period
+  returns and an explicit shot count — no default, because a default
+  would be a guess wearing a number's clothes — and computes
+  Bailey–López de Prado's deflation from stated parts: the per-bar
+  equity returns `VolatilityStats` already uses (population moments,
+  ddof=0), `V[SR] = (1 − skew·SR + (kurt − 1)/4·SR²)/(T − 1)` with
+  Pearson kurtosis, Blom's expected maximum of `trials` standard
+  normals for SR0 (exactly 0 for one shot), and `Φ((SR − SR0)/√V)`
+  through the stdlib `statistics.NormalDist` — no new dependency,
+  returns handed in as `Decimal` and money never leaving `Decimal`
+  anywhere else. `deflated_from_result` derives the same series the
+  metrics use, refusing a non-positive equity point rather than
+  reporting a ratio it cannot define. The dataclass re-derives its
+  own SR0 and its own deflated value from its stored fields and
+  refuses a headline that cannot account for itself. With the
+  figure supplied, the report's Uncertainty line records the count,
+  a Multiple-testing adjustment section carries every number beside
+  the honesty note (the deflated value is **not the probability
+  that the strategy works**), and the standing limitation states the
+  model's assumptions; without one the report says "not recorded"
+  exactly as before — a count is never invented to fill a section.
+  Golden traces hand-computed: a symmetric series has Sharpe 0 and,
+  with one shot, SR0 = 0, so the deflation is Φ(0) = 0.5 bit for
+  bit; doubling every return changes no figure (the deflation is
+  scale-free); the golden run stands on 4 periods and a declining
+  curve deflates below a half; more shots strictly raise SR0 and
+  strictly lower the same headline.
+- battery after increment 6: `pytest` **666 passed** + 1 skipped
+  (+9: 8 deflated tests incl. self-accounting and refusal paths, 1
+  report test rendering the recorded count); `ruff check`/
+  `ruff format` clean (200 files), `mypy` clean (154 source files),
+  prettier, eslint and `tsc` clean, vitest **132 passed**.
+- not started within Phase 7: the candidate / validated / rejected /
   archived promotion workflow with its product rule (no `validated`
   without out-of-sample and walk-forward evidence attached).
 
-Not started as of Phase 7 increment 5: the rest of Phase 7 (above),
+Not started as of Phase 7 increment 6: the rest of Phase 7 (above),
 then Phase 8 (AI research).
 
 Carried forward, none of it Phase 6: nightly backup scheduling and where
