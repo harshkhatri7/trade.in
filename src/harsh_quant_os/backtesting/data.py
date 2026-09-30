@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from harsh_quant_os.backtesting.errors import BacktestError
@@ -86,14 +87,19 @@ class BacktestData:
                 )
 
     @property
-    def start(self) -> object:
+    def start(self) -> datetime:
         """Timestamp of the first bar (timezone-aware)."""
         return self.bars[0].timestamp
 
     @property
-    def end(self) -> object:
+    def end(self) -> datetime:
         """Timestamp of the last bar (timezone-aware)."""
         return self.bars[-1].timestamp
+
+    @property
+    def symbol(self) -> str:
+        """The dataset's single instrument, e.g. ``XBTUSD``."""
+        return self.bars[0].symbol
 
     @property
     def timeframe(self) -> str:

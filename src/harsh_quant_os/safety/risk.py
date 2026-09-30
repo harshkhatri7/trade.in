@@ -167,6 +167,20 @@ class ConfiguredRiskEvaluator:
         self._day: date | None = None
         self._day_start_equity: Decimal | None = None
 
+    def limits(self) -> dict[str, str]:
+        """The captured limits as exact strings, for the run manifest.
+
+        Keyed by the shortened names of the Settings fields they came
+        from, values stringified from the exact Decimals actually
+        enforced — so a manifest records the limits that decided the
+        run, not the floats that were declared.
+        """
+        return {
+            "max_daily_loss": str(self._max_daily_loss),
+            "max_open_positions": str(self._max_open_positions),
+            "max_position_notional": str(self._max_position_notional),
+        }
+
     def evaluate(
         self,
         *,

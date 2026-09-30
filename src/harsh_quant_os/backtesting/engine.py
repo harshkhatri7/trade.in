@@ -109,10 +109,24 @@ class OrderRecord:
 
 @dataclass(frozen=True, slots=True)
 class EquityPoint:
-    """One bar's closing equity mark."""
+    """One bar's closing state: the mark, the position behind it, its close.
+
+    Recording position and close beside the equity makes the curve
+    self-sufficient for exposure metrics and reporting — no replay of
+    fills is needed to know what was held at bar *t*.
+
+    Attributes:
+        time: The bar's timestamp (timezone-aware, strictly increasing).
+        equity: Marked equity at this close (exact).
+        position: Signed position held at this close, after any fill at
+            this bar's open.
+        close: The bar's close price (the marking price).
+    """
 
     time: datetime
     equity: Decimal
+    position: Decimal
+    close: Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +192,7 @@ class BacktestResult:
     Attributes:
         dataset_id / dataset_version: The pinned input (content-addressed
             SHA-256, recomputed by the loader).
+        symbol / timeframe: What was run — one instrument, one bar size.
         strategy_name / strategy_parameters: From the strategy, sorted
             by key so construction order cannot move the bytes.
         intrabar_rule: Always ``"next_bar_open"`` in this engine.
@@ -193,6 +208,8 @@ class BacktestResult:
 
     dataset_id: str
     dataset_version: str
+    symbol: str
+    timeframe: str
     strategy_name: str
     strategy_parameters: tuple[tuple[str, str], ...]
     intrabar_rule: str
@@ -344,7 +361,14 @@ def run_backtest(
 
         # 2. Mark equity at this bar's close.
         marked = ledger.mark_equity(bar.close)
-        curve.append(EquityPoint(time=bar.timestamp, equity=marked))
+        curve.append(
+            EquityPoint(
+                time=bar.timestamp,
+                equity=marked,
+                position=ledger.quantity,
+                close=bar.close,
+            )
+        )
 
         # 3. Decide: bounded history, current ledger state, close mark.
         context = DecisionContext(
@@ -425,6 +449,8 @@ def run_backtest(
     return BacktestResult(
         dataset_id=data.dataset_id,
         dataset_version=data.version,
+        symbol=data.symbol,
+        timeframe=data.timeframe,
         strategy_name=strategy.name,
         strategy_parameters=parameters,
         intrabar_rule=NEXT_BAR_OPEN,
