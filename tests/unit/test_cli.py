@@ -588,3 +588,215 @@ def test_the_quarantine_summary_calls_a_refusal_a_refusal(
 
     for price in FIXTURE_PRICES:
         assert price not in summary, "the quarantine summary printed a price"
+
+
+# -- `strategy` -------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_promote_documents_the_gate_it_enforces(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main(["strategy", "promote", "--help"])
+
+    assert excinfo.value.code == 0
+    out = capsys.readouterr().out
+    assert "walk-forward" in out
+    assert "someone other than the author" in out
+
+
+@pytest.mark.unit
+def test_strategy_workflow_promotes_only_with_the_section_3_evidence(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = str(tmp_path)
+
+    assert (
+        main(
+            [
+                "strategy",
+                "register",
+                "--slug",
+                "band-v2",
+                "--hypothesis",
+                "enter on a 1% band, exit on a 0.5% retrace",
+                "--author",
+                "quant",
+                "--run-id",
+                "run-0001",
+                "--run-detail",
+                "exploratory run on the pinned 1m dataset",
+                "--strategies-dir",
+                root,
+            ]
+        )
+        == 0
+    )
+    assert "registered: band-v2 -> candidates" in capsys.readouterr().out
+
+    # Too early: refused, with the gaps named on stderr.
+    assert (
+        main(
+            [
+                "strategy",
+                "promote",
+                "--slug",
+                "band-v2",
+                "--actor",
+                "auditor",
+                "--strategies-dir",
+                root,
+            ]
+        )
+        == 1
+    )
+    err = capsys.readouterr().err
+    assert "cannot be marked validated" in err
+    assert "walk_forward" in err
+
+    for kind in ("held_out", "walk_forward", "sensitivity", "critique"):
+        assert (
+            main(
+                [
+                    "strategy",
+                    "evidence",
+                    "--slug",
+                    "band-v2",
+                    "--kind",
+                    kind,
+                    "--reference",
+                    f"ref-{kind}",
+                    "--detail",
+                    f"the recorded {kind} entry",
+                    "--recorded-by",
+                    "auditor",
+                    "--strategies-dir",
+                    root,
+                ]
+            )
+            == 0
+        )
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "strategy",
+                "promote",
+                "--slug",
+                "band-v2",
+                "--actor",
+                "auditor",
+                "--strategies-dir",
+                root,
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "promoted: band-v2 -> validated" in out
+    assert "Phase 10 plus human approval" in out
+
+    # The file moved with the stage.
+    assert (tmp_path / "validated" / "band-v2.json").is_file()
+    assert not (tmp_path / "candidates" / "band-v2.json").exists()
+
+    assert main(["strategy", "show", "--strategies-dir", root]) == 0
+    out = capsys.readouterr().out
+    assert "validated/band-v2" in out
+    assert "missing for validated: none" in out
+    assert "unregistered -> candidates" in out
+    assert "candidates -> validated" in out
+
+
+@pytest.mark.unit
+def test_strategy_reject_requires_and_then_keeps_its_reason(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = str(tmp_path)
+    assert (
+        main(
+            [
+                "strategy",
+                "register",
+                "--slug",
+                "quiet-market",
+                "--hypothesis",
+                "entries only in high-volume sessions",
+                "--author",
+                "quant",
+                "--run-id",
+                "run-0002",
+                "--run-detail",
+                "exploratory run with two trades",
+                "--strategies-dir",
+                root,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    # An empty reason never reaches the file.
+    assert (
+        main(
+            [
+                "strategy",
+                "reject",
+                "--slug",
+                "quiet-market",
+                "--actor",
+                "quant",
+                "--reason",
+                " ",
+                "--strategies-dir",
+                root,
+            ]
+        )
+        == 1
+    )
+    assert "keeps its reason" in capsys.readouterr().err
+
+    assert (
+        main(
+            [
+                "strategy",
+                "reject",
+                "--slug",
+                "quiet-market",
+                "--actor",
+                "quant",
+                "--reason",
+                "two trades in the sample, nothing to judge",
+                "--strategies-dir",
+                root,
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "rejected: quiet-market" in out
+    assert "reason kept: two trades in the sample, nothing to judge" in out
+
+
+@pytest.mark.unit
+def test_strategy_show_on_an_empty_directory_says_so(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["strategy", "show", "--strategies-dir", str(tmp_path)]) == 0
+    assert "no promotion records" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+def test_strategy_without_a_subcommand_is_rejected(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main(["strategy"])
+
+    assert excinfo.value.code == 2
+    assert "required" in capsys.readouterr().err

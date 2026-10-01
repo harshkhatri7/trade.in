@@ -56,6 +56,12 @@ The pieces:
   Sharpe: the headline prices how many shots were taken, from a
   recorded count, with its model stated so the arithmetic can be
   checked.
+- :mod:`~harsh_quant_os.backtesting.promotion` — the §3 promotion
+  workflow: candidates / validated / rejected / archived as a
+  closed machine whose gates are checked, not promised — no
+  `validated` without held-out, walk-forward, sensitivity and
+  critique evidence, a critique from someone other than the author,
+  reasons kept on every rejection, and no path to live at all.
 
 Window coverage (methodology §5's data-side check) is
 :func:`~harsh_quant_os.backtesting.data.window_coverage`: missing bars
@@ -125,6 +131,25 @@ from harsh_quant_os.backtesting.metrics import (
     trade_records,
 )
 from harsh_quant_os.backtesting.null import ShuffledNull, shuffle_null
+from harsh_quant_os.backtesting.promotion import (
+    EVIDENCE_KINDS,
+    RECORD_VERSION,
+    REQUIRED_FOR_VALIDATED,
+    STAGES,
+    Evidence,
+    PromotionRecord,
+    Transition,
+    add_evidence,
+    archive,
+    iter_records,
+    load_record,
+    promote_to_validated,
+    record_from_json,
+    record_to_json,
+    register,
+    reject,
+    save_record,
+)
 from harsh_quant_os.backtesting.reference import CloseThreshold, parse_decimal
 from harsh_quant_os.backtesting.regimes import (
     UNDEFINED,
@@ -184,9 +209,13 @@ from harsh_quant_os.backtesting.walkforward import (
 __all__ = [
     "DEFAULT_SENSITIVITY_FACTORS",
     "ENDING_EQUITY",
+    "EVIDENCE_KINDS",
     "MANIFEST_VERSION",
     "NEXT_BAR_OPEN",
+    "RECORD_VERSION",
+    "REQUIRED_FOR_VALIDATED",
     "SENSITIVITY_VERSION",
+    "STAGES",
     "SUMMARY_VERSION",
     "UNDEFINED",
     "AccessLedger",
@@ -207,6 +236,7 @@ __all__ = [
     "DeflatedSharpe",
     "DrawdownStats",
     "EquityPoint",
+    "Evidence",
     "ExposureStats",
     "FixedBpsSlippage",
     "HeldOutEvaluation",
@@ -218,6 +248,7 @@ __all__ = [
     "OrderStatus",
     "OutOfSampleNumbers",
     "PassiveBenchmark",
+    "PromotionRecord",
     "RegimeLabels",
     "RegimeSegment",
     "RegimeSplit",
@@ -233,11 +264,14 @@ __all__ = [
     "Strategy",
     "TradeRecords",
     "TradeStats",
+    "Transition",
     "VolatilityStats",
     "WalkForwardSummary",
     "WalkForwardWindow",
     "WindowCoverage",
     "WindowOutcome",
+    "add_evidence",
+    "archive",
     "build_manifest",
     "build_report",
     "closes_as_float",
@@ -247,16 +281,24 @@ __all__ = [
     "deflated_from_result",
     "deflated_sharpe",
     "evaluate_held_out",
+    "iter_records",
     "load_backtest_data",
+    "load_record",
     "manifest_from_json",
     "manifest_to_json",
     "parameter_sensitivity",
     "parse_decimal",
     "passive_benchmark",
+    "promote_to_validated",
+    "record_from_json",
+    "record_to_json",
+    "register",
+    "reject",
     "replay_sensitivity",
     "replay_walk_forward",
     "run_backtest",
     "run_from_manifest",
+    "save_record",
     "select_on_train",
     "shuffle_null",
     "split_by_regime",

@@ -66,9 +66,14 @@ declared thresholds, entry-time attribution, §9.5).
 `deflated.py` prices a recorded shot count into the headline (§9.7),
 and the report renders the count when one is supplied and says
 "not recorded" when none is — a count is never invented. The
-candidate/validated/rejected/archived workflow is **not
-implemented yet**; the look-ahead, leakage and survivorship rows are
-covered by the engine and Phase 5 checks described in §8.
+candidate/validated/rejected/archived workflow exists as of Phase 7
+increment 7: `promotion.py` enforces the sentence above itself — a
+record cannot move to, load at, or be hand-written into `validated`
+without held-out, walk-forward, sensitivity and critique evidence
+recorded, the critique from someone other than the candidate's
+author, and a stated reason on every rejection (§9.8). The
+look-ahead, leakage and survivorship rows are covered by the engine
+and Phase 5 checks described in §8.
 
 ---
 
@@ -142,17 +147,19 @@ directory remains the Phase 0 requirements record):
 | The same-universe passive reference: first fill, fixed-point sizing, identities | `benchmark.py`        |
 | The seeded shuffled-signal null: capture, permutation, counts reported as counts | `null.py`             |
 | The deflated Sharpe: a recorded shot count priced into the headline, self-accounting | `deflated.py` |
+| Promotion stages, evidence gates, append-only history, tamper-checked file moves      | `promotion.py`        |
 | `hqos backtest report`                                                        | `../cli.py`           |
+| `hqos strategy register/evidence/promote/reject/archive/show`                 | `../cli.py`           |
 
 Every simulated order is evaluated by `ConfiguredRiskEvaluator`
 before it may fill — the same configured gate the paper-trading path
 will use. Reports are written to `research/reports/`, which Git
 ignores: a simulated result is an artefact of a run, never repository
-content. Phase 7 increments 1–6 added the data-separation and
+content. Phase 7 increments 1–7 added the data-separation and
 walk-forward layers, windowed replay (§9), the parameter-sensitivity
 surface (§9.4), the causal regime split (§9.5), the benchmark and
-shuffled-signal null (§9.6) and the §2.5 deflated headline (§9.7);
-the promotion workflow is **not implemented**.
+shuffled-signal null (§9.6), the §2.5 deflated headline (§9.7) and
+the §3 promotion workflow (§9.8).
 
 ---
 
@@ -418,3 +425,52 @@ being true.
   golden run's five equity points give four returns, and its
   declining curve (1000 → 988) deflates below a half; more shots
   strictly raise SR0 and strictly lower the same headline.
+
+### 9.8 The promotion workflow (promotion.py, increment 7)
+
+- **The product rule, enforced rather than stated**: a record
+  cannot move to `validated` without held-out, walk-forward,
+  sensitivity and critique evidence all recorded (§3's table), and
+  the gate re-checks on every construction — a JSON file edited by
+  hand into `validated` without those kinds is refused, not read.
+  The refusal names exactly what is still missing.
+- **Independence is checked, not promised**: a critique recorded by
+  the candidate's own author is refused at append time, at
+  promotion time, and at load time — the independence half of
+  anti-overfitting §2.10 made mechanical; the review process behind
+  it remains the documented protocol.
+- **Every move states itself**: transitions are append-only, and
+  the recorded history is replayed through the same legal-move
+  rules on every load — `unregistered → candidates` for
+  registration, `candidates → validated / rejected / archived`,
+  `validated → archived`, and `rejected` and `archived` terminal. A
+  record whose history does not chain, records a move with no path,
+  or ends at another stage than the one it claims is refused. A
+  rejection and an archive each require a kept reason (§2.9: the
+  true number of attempts stays visible), and a validated strategy
+  is archived with its reason, never rewritten as never-tried.
+- **No live stage exists**: the stage set is candidates, validated,
+  rejected, archived; `to_stage="live"` is refused; and no
+  transition could reach live consideration — that is Phase 10 plus
+  human approval, deliberately outside this machine.
+- **Evidence is a reference, never a measurement**: entries are
+  (kind, reference, detail, who recorded it, when) over a closed
+  kind set with one entry per kind, so nothing can be quietly
+  replaced. Run manifests and reports stay artefacts of runs
+  outside version control and the record names them by id: nothing
+  here can drift from a number it no longer owns, and nothing here
+  invents one. Slugs are path-safe by construction (lowercase
+  letters, digits, single hyphens) and validated before any path is
+  built.
+- **The file move loses nothing**: a stage change writes the new
+  stage's file first and removes the old one after; the same slug
+  in two stages is refused as a duplicate; a listing
+  (`iter_records`) raises on a corrupt, misfiled or foreign record
+  rather than skipping it. The whole machine is driven by
+  `hqos strategy register/evidence/promote/reject/archive/show`.
+- Tests: `tests/backtesting/test_promotion.py` walks the golden
+  promotion path and every refusal above (missing evidence,
+  self-critique at all three layers, empty reasons, closed stages,
+  the absent live stage), the byte-for-byte JSON round trip,
+  tampered histories, the file move and the duplicate slug; CLI
+  coverage lives in `tests/unit/test_cli.py`.

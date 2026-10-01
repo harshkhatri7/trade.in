@@ -115,9 +115,17 @@ recorded shot count explicitly (there is no default count) and prices
 it into the headline, and the report renders the count when one is
 supplied and says "not recorded" when none is — the count is a
 record claim, never a guess (backtesting.md §9.7). The promotion
-gates (§3) and the independent critique (§2.10) do not exist yet,
-and §2.1 pre-registration, §2.8's complexity budget and §2.9's
-negative-result retention are documented protocols here rather than
-automation. No strategy or result is stored in this repository: a
-backtest's artefacts are run manifests and reports, never repository
-content (backtesting.md §7).
+gates (§3) exist as of Phase 7 increment 7: `promotion.py` moves a
+record through candidates / validated / rejected / archived,
+refuses `validated` without all four recorded kinds, refuses a
+critique recorded by the candidate's own author (the independence
+half of §2.10, checked rather than promised), keeps a stated reason
+on every rejection and archive (§2.9's retention, the file's part
+of it), and offers no stage or transition toward live at all
+(backtesting.md §9.8). §2.1 pre-registration, §2.8's complexity
+budget and the review process behind §2.10 remain documented
+protocols here rather than automation. Records hold references and
+reasons, never measurements: a backtest's artefacts are run
+manifests and reports, which stay outside version control — and
+since real research has registered no candidate yet, the repository
+currently holds no strategy record at all (backtesting.md §7).

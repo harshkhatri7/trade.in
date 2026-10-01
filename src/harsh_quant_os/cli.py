@@ -43,6 +43,7 @@ from harsh_quant_os.backtesting import (
     cost_sensitivity,
     load_backtest_data,
     parse_decimal,
+    promotion,
     run_backtest,
     window_coverage,
 )
@@ -288,6 +289,145 @@ def _build_parser() -> argparse.ArgumentParser:
         "--slippage-bps",
         default="10",
         help="Slippage in basis points, exact decimal (default 10).",
+    )
+
+    strategy = subparsers.add_parser(
+        "strategy",
+        help=(
+            "Move a strategy through candidates / validated / rejected / "
+            "archived with evidence attached. 'validated' is refused without "
+            "the section 3 evidence, and there is no live stage."
+        ),
+    )
+    strategy_commands = strategy.add_subparsers(dest="strategy_command", required=True)
+
+    def _add_record_arguments(command: argparse.ArgumentParser) -> None:
+        """The slug and directory every strategy command shares."""
+        command.add_argument(
+            "--slug",
+            required=True,
+            help=(
+                "Record identity: lowercase letters, digits and single "
+                "hyphens; it becomes the file name."
+            ),
+        )
+        command.add_argument(
+            "--strategies-dir",
+            default="strategies",
+            help="Directory holding the four stage folders (default: strategies).",
+        )
+
+    register = strategy_commands.add_parser(
+        "register",
+        help="Register a hypothesis with its one exploratory run into candidates/.",
+    )
+    _add_record_arguments(register)
+    register.add_argument(
+        "--hypothesis",
+        required=True,
+        help="The registered hypothesis being tested.",
+    )
+    register.add_argument(
+        "--author",
+        required=True,
+        help="Who is accountable for the candidate.",
+    )
+    register.add_argument(
+        "--run-id",
+        required=True,
+        help=(
+            "Run id of the one exploratory run (the run's artefacts stay "
+            "outside version control; this names them)."
+        ),
+    )
+    register.add_argument(
+        "--run-detail",
+        required=True,
+        help="What that exploratory run was.",
+    )
+
+    evidence = strategy_commands.add_parser(
+        "evidence",
+        help=("Append one recorded evidence entry; entries are append-only and one per kind."),
+    )
+    _add_record_arguments(evidence)
+    evidence.add_argument(
+        "--kind",
+        required=True,
+        choices=list(promotion.EVIDENCE_KINDS),
+        help="Which recorded kind.",
+    )
+    evidence.add_argument(
+        "--reference",
+        required=True,
+        help="How to find the artefact (run id, manifest hash, critique id).",
+    )
+    evidence.add_argument(
+        "--detail",
+        required=True,
+        help="What this entry was, in words.",
+    )
+    evidence.add_argument(
+        "--recorded-by",
+        required=True,
+        help="Who recorded it; a critique must differ from the candidate's --author.",
+    )
+
+    promote_help = (
+        "Promote a candidate to validated; refused unless held-out, "
+        "walk-forward, sensitivity and critique are all recorded and the "
+        "critique was recorded by someone other than the author."
+    )
+    promote = strategy_commands.add_parser(
+        "promote",
+        help=promote_help,
+        description=promote_help,
+    )
+    _add_record_arguments(promote)
+    promote.add_argument("--actor", required=True, help="Who is promoting.")
+    promote.add_argument(
+        "--reason",
+        default=None,
+        help="Why; defaults to naming the section 3 gates it passed.",
+    )
+
+    reject = strategy_commands.add_parser(
+        "reject",
+        help="Reject a candidate, keeping its reason beside the record (section 2.9).",
+    )
+    _add_record_arguments(reject)
+    reject.add_argument("--actor", required=True, help="Who is rejecting.")
+    reject.add_argument(
+        "--reason",
+        required=True,
+        help="Why it is rejected; required, and kept with the record.",
+    )
+
+    archive = strategy_commands.add_parser(
+        "archive",
+        help="Archive a candidate or validated strategy with its reason.",
+    )
+    _add_record_arguments(archive)
+    archive.add_argument("--actor", required=True, help="Who is archiving.")
+    archive.add_argument(
+        "--reason",
+        required=True,
+        help="Why it was closed; required, and kept with the record.",
+    )
+
+    show = strategy_commands.add_parser(
+        "show",
+        help="Show one record, or every record across the four stages.",
+    )
+    show.add_argument(
+        "--slug",
+        default=None,
+        help="Show only this record; omit to list every record.",
+    )
+    show.add_argument(
+        "--strategies-dir",
+        default="strategies",
+        help="Directory holding the four stage folders (default: strategies).",
     )
     return parser
 
@@ -780,6 +920,140 @@ def _backtest_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _strategy_command(args: argparse.Namespace) -> int:
+    """Run one strategy-promotion command against the records on disk.
+
+    Everything printed was just read from or written to a record:
+    stages, references, kinds, who recorded what and why. The gates
+    live in :mod:`harsh_quant_os.backtesting.promotion`, so a
+    refusal's own words are what reaches stderr.
+
+    Raises:
+        _CliError: Any refusal from the workflow or the filesystem,
+        with the message the refusal produced.
+    """
+    root = Path(args.strategies_dir)
+    try:
+        if args.strategy_command == "register":
+            record = promotion.register(
+                slug=args.slug,
+                hypothesis=args.hypothesis,
+                author=args.author,
+                at=datetime.now(UTC),
+                reference=args.run_id,
+                detail=args.run_detail,
+            )
+            path = promotion.save_record(root, record)
+            print(f"registered: {record.slug} -> candidates ({path})")
+            return 0
+
+        if args.strategy_command == "evidence":
+            record = promotion.load_record(root, args.slug)
+            updated = promotion.add_evidence(
+                record,
+                kind=args.kind,
+                reference=args.reference,
+                detail=args.detail,
+                recorded_by=args.recorded_by,
+                at=datetime.now(UTC),
+            )
+            path = promotion.save_record(root, updated)
+            print(f"recorded: {args.kind} on {args.slug} ({path})")
+            return 0
+
+        if args.strategy_command == "promote":
+            record = promotion.load_record(root, args.slug)
+            reason = args.reason or (
+                "passed the section 3 gates: held-out, walk-forward, "
+                "sensitivity and critique all recorded"
+            )
+            updated = promotion.promote_to_validated(
+                record,
+                actor=args.actor,
+                reason=reason,
+                at=datetime.now(UTC),
+            )
+            path = promotion.save_record(root, updated)
+            print(f"promoted: {args.slug} -> validated ({path})")
+            print(
+                "note: live consideration is Phase 10 plus human approval; "
+                "this workflow reaches validated and stops."
+            )
+            return 0
+
+        if args.strategy_command == "reject":
+            record = promotion.load_record(root, args.slug)
+            updated = promotion.reject(
+                record,
+                actor=args.actor,
+                reason=args.reason,
+                at=datetime.now(UTC),
+            )
+            path = promotion.save_record(root, updated)
+            print(f"rejected: {args.slug} ({path})")
+            print(f"reason kept: {updated.history[-1].reason}")
+            return 0
+
+        if args.strategy_command == "archive":
+            record = promotion.load_record(root, args.slug)
+            updated = promotion.archive(
+                record,
+                actor=args.actor,
+                reason=args.reason,
+                at=datetime.now(UTC),
+            )
+            path = promotion.save_record(root, updated)
+            print(f"archived: {args.slug} ({path})")
+            print(f"reason kept: {updated.history[-1].reason}")
+            return 0
+
+        if args.strategy_command == "show":
+            if args.slug:
+                records = [promotion.load_record(root, args.slug)]
+            else:
+                records = list(promotion.iter_records(root))
+            if not records:
+                print(f"no promotion records under {root}")
+                return 0
+            for record in records:
+                print(f"{record.stage}/{record.slug} - author {record.author}")
+                print(f"  hypothesis: {record.hypothesis}")
+                for entry in record.evidence:
+                    print(
+                        f"  evidence: {entry.kind} ({entry.reference}) "
+                        f"recorded by {entry.recorded_by} at "
+                        f"{entry.recorded_at.isoformat()}"
+                    )
+                missing = record.missing_for_validated
+                if missing:
+                    print(f"  missing for validated: {', '.join(missing)}")
+                else:
+                    print("  missing for validated: none - section 3 kinds all recorded")
+                if record.stage == "candidates" and not missing:
+                    critique = next(entry for entry in record.evidence if entry.kind == "critique")
+                    if critique.recorded_by == record.author:
+                        print(
+                            f"  critique independence: would refuse - "
+                            f"{critique.recorded_by} also authored the candidate"
+                        )
+                    else:
+                        print(
+                            "  critique independence: ok - recorded by "
+                            f"{critique.recorded_by}, author {record.author}"
+                        )
+                for move in record.history:
+                    print(
+                        f"  history: {move.at.isoformat()} "
+                        f"{move.from_stage} -> {move.to_stage} "
+                        f"by {move.actor}: {move.reason}"
+                    )
+            return 0
+    except (BacktestError, OSError) as exc:
+        raise _CliError(str(exc)) from exc
+
+    raise _CliError(f"unknown strategy command: {args.strategy_command}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return a process exit code."""
     args = _build_parser().parse_args(list(argv) if argv is not None else None)
@@ -829,6 +1103,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         try:
             return _backtest_report(args)
+        except _CliError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    if args.command == "strategy":
+        if args.strategy_command not in {
+            "register",
+            "evidence",
+            "promote",
+            "reject",
+            "archive",
+            "show",
+        }:
+            print(f"Unknown command: strategy {args.strategy_command}", file=sys.stderr)
+            return 2
+        try:
+            return _strategy_command(args)
         except _CliError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

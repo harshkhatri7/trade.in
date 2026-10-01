@@ -24,7 +24,7 @@
 | --------------------------- | ------------------------------------------------------------ |
 | Git repository              | Initialized, branch `main`, no remote configured             |
 | Repository layout           | `apps/`, `packages/`, `src/`, `agents/`, `docs/`, `tests/`, `scripts/`, `infrastructure/` |
-| Documentation               | Complete for Phases 0–6 and Phase 7 increment 1 (architecture, development, security, operations, research, ADRs) |
+| Documentation               | Complete for Phases 0–6 and Phase 7 through increment 7 (architecture, development, security, operations, research, ADRs) |
 | Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log`, `datasets`, `dataset_provenance`, `strategies`, `experiments`, `journal_entries` |
 | Migrations                  | Three revisions (`930c38609bc3` → `3842df3d0db8` → `7c4d9e2a15b3`); empty → head → empty is covered by a test |
 | Backup and restore          | `harsh_quant_os.db.backup` — binary COPY with the schema revision in the manifest; round trip proved by a test |
@@ -42,7 +42,7 @@
 | Dataset store + manifest    | `data/raw`, `data/clean`, `data/quarantine` written content-addressed and atomically; `datasets` carries quality status, version and storage path with three check constraints; provenance appended per acquisition |
 | Market-data adapter         | `KrakenProvider` — Kraken's public OHLC feed behind `HttpTransport` (stdlib client, no key, prices as decimal strings); paging, an unfinished candle and both observed error responses are handled explicitly, and an opt-in live test composes the whole path |
 | Ingestion job               | `hqos data ingest` — fetch → validate → store → register in one command; refuses (exit 1) and quarantines a batch validation rejects; database proved reachable before any network call |
-| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increments 1–5 add chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`), rolling/expanding walk-forward windows with the aggregated out-of-sample track, windowed manifest re-execution and full walk-forward replay (`walkforward.py`), the declared parameter-sensitivity surface with its adjacency statistics and cell replay (`sensitivity.py`), causal regime segmentation with entry-time attribution and the regime-specific flag (`regimes.py`), and the anti-overfitting §2.6 comparison set — a same-universe passive benchmark (`benchmark.py`) and the seeded shuffled-signal null (`null.py`), and the anti-overfitting §2.5 deflated Sharpe (`deflated.py`) that prices the recorded shot count into the report's headline |
+| Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increments 1–7 add chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`), rolling/expanding walk-forward windows with the aggregated out-of-sample track, windowed manifest re-execution and full walk-forward replay (`walkforward.py`), the declared parameter-sensitivity surface with its adjacency statistics and cell replay (`sensitivity.py`), causal regime segmentation with entry-time attribution and the regime-specific flag (`regimes.py`), the anti-overfitting §2.6 comparison set — a same-universe passive benchmark (`benchmark.py`) and the seeded shuffled-signal null (`null.py`) — the anti-overfitting §2.5 deflated Sharpe (`deflated.py`) that prices the recorded shot count into the report's headline, and the §3 promotion workflow (`promotion.py`) whose gates refuse `validated` without recorded held-out, walk-forward, sensitivity and critique evidence |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
 | Lint / format               | Ruff, ESLint 10 flat config, Prettier                        |
 | Tests                       | pytest + Vitest, including contract parity, integration (real HTTP, real API process, API → client → DOM), security and documentation suites |
@@ -136,17 +136,17 @@ defect.
   regime splits, the passive benchmark and the shuffled-signal null
   exist as of Phase 7 increments 3-5.
 - Strategy validation and walk-forward testing — Phase 7, in progress.
-  Increments 1–6 (chronological splits, the held-out-once access
+  Increments 1–7 (chronological splits, the held-out-once access
   ledger, train-slice selection recording every variant, walk-forward
   windows with the documented aggregation, tamper-checked JSON
   evidence, windowed manifest re-execution, full replay of every
   stored manifest, the declared parameter-sensitivity surface with
   every cell, adjacency counts and cell replay, causal regime
   segmentation with entry-time attribution and the regime-specific
-  flag, the §2.6 passive benchmark and shuffled-signal null, and the
-  §2.5 deflated Sharpe with the shot count recorded in the report)
-  exist with golden tests; the promotion workflow remains not
-  implemented.
+  flag, the §2.6 passive benchmark and shuffled-signal null, the
+  §2.5 deflated Sharpe with the shot count recorded in the report,
+  and the §3 promotion workflow with its evidence gates) exist with
+  golden tests.
 - AI research assistant — Phase 8
 - Risk engine — Phase 9
 - Paper trading — Phase 10
@@ -729,11 +729,12 @@ delivered and validated on 2026-09-30:
   simulated order passes `ConfiguredRiskEvaluator` before it may
   fill.
 
-**Phase 7 (Strategy validation) is in progress.** Increments 1–6 —
+**Phase 7 (Strategy validation) is in progress.** Increments 1–7 —
 data separation, walk-forward, replayable windowed evidence, the
 parameter-sensitivity surface, regime segmentation, the
-benchmark/null comparison set and the deflated headline — are
-delivered and validated on 2026-09-30:
+benchmark/null comparison set, the deflated headline and the
+promotion workflow — are delivered and validated (increments 1–6 on
+2026-09-30, increment 7 on 2026-10-01):
 
 - **Increment 1 — splits, the held-out-once ledger, walk-forward**
   (`validation.py`, `walkforward.py`): a chronological train/held-out
@@ -926,12 +927,43 @@ delivered and validated on 2026-09-30:
   report test rendering the recorded count); `ruff check`/
   `ruff format` clean (200 files), `mypy` clean (154 source files),
   prettier, eslint and `tsc` clean, vitest **132 passed**.
-- not started within Phase 7: the candidate / validated / rejected /
-  archived promotion workflow with its product rule (no `validated`
-  without out-of-sample and walk-forward evidence attached).
+- **Increment 7 — the §3 promotion workflow** (`promotion.py`,
+  `hqos strategy register/evidence/promote/reject/archive/show`):
+  candidates / validated / rejected / archived is now a closed
+  machine with the product rule inside it. `promote_to_validated`
+  refuses without held-out, walk-forward, sensitivity and critique
+  evidence recorded (the refusal names exactly what is missing),
+  refuses a critique recorded by the candidate's own author at
+  append, promote and load time (§2.10's independence, three
+  layers), requires a kept reason on rejection and archiving
+  (§2.9), keeps `rejected` and `archived` terminal, rewrites a
+  validated strategy only to `archived` with its reason, and has no
+  `live` stage or transition at all — live consideration is Phase
+  10 plus human approval, outside the machine by construction.
+  History is append-only and replayed through the same legal-move
+  rules on every load: a record whose past could not have happened,
+  whose history ends at another stage than it claims, or whose slug
+  sits in two stage directories is refused rather than read. The
+  record stores references (kind, reference, detail, who, when)
+  from a closed kind set, one per kind — never measurements, since
+  run manifests and reports stay outside version control. JSON is
+  canonical and round-trips byte for byte; slugs are path-validated
+  before any path is built; a stage move writes the new file before
+  removing the old, and a listing raises on a corrupt or misfiled
+  record rather than skipping it. Docs: backtesting.md §9.8 plus §3
+  status and §7; anti-overfitting §6.
+- battery after increment 7: `pytest` **689 passed** + 1 skipped
+  (+23: 18 promotion tests incl. gate refusals, three-layer
+  self-critique refusal, tampered-history refusals and the file
+  move, 5 CLI tests); `ruff check`/`ruff format` clean (202 files),
+  `mypy` clean (156 source files), prettier, eslint and `tsc`
+  clean, vitest **132 passed**.
+- not started within Phase 7: nothing — all seven increments are
+  delivered; the phase exit criterion (no `validated` without
+  out-of-sample and walk-forward evidence attached) is enforced by
+  `promotion.py` and its tests.
 
-Not started as of Phase 7 increment 6: the rest of Phase 7 (above),
-then Phase 8 (AI research).
+Not started as of Phase 7 increment 7: Phase 8 (AI research).
 
 Carried forward, none of it Phase 6: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and
