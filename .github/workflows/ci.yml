@@ -119,13 +119,27 @@ jobs:
     # one. It turns that into a failure.
     env:
       HQOS_REQUIRE_POSTGRES: '1'
-      DATABASE_URL: postgresql+asyncpg://harsh_quant_os:replace-with-a-local-dev-password@127.0.0.1:5432/harsh_quant_os
+      # `Settings.is_placeholder()` rejects any value starting with
+      # `replace-`, `changeme`, `your-` or `todo`, and `_require_database()`
+      # (cli.py) refuses to open a connection whose `DATABASE_PASSWORD` is
+      # still a placeholder. That gate is deliberate, so the fix is to
+      # provision a real credential for this job's throwaway container rather
+      # than to relax the gate. `.env.example`'s own placeholder was used as
+      # the container password, which is why `hqos db backup` failed in CI
+      # while passing on a provisioned machine.
+      #
+      # `github.run_id` makes the value unique to one run and meaningless
+      # outside it, so no credential worth protecting is committed here.
+      # DATABASE_PASSWORD must agree with the URL: `database_password` is a
+      # separate setting and is not read back out of `DATABASE_URL`.
+      DATABASE_PASSWORD: ci-${{ github.run_id }}
+      DATABASE_URL: postgresql+asyncpg://harsh_quant_os:ci-${{ github.run_id }}@127.0.0.1:5432/harsh_quant_os
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: harsh_quant_os
-          POSTGRES_PASSWORD: replace-with-a-local-dev-password
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}
           POSTGRES_DB: harsh_quant_os
         ports:
           - 5432:5432
