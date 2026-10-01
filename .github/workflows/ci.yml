@@ -83,7 +83,13 @@ jobs:
       - name: Install project (with dev extras)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          # `dev` alone is not enough: `storage` (SQLAlchemy, Alembic,
+          # asyncpg) and `quant` (NumPy, SciPy, statsmodels) were added by
+          # later phases and are imported at module scope by src/ and
+          # tests/. Installing only `dev` produced 92 mypy
+          # import-not-found errors across 42 files - reproduced locally in
+          # a clean venv before this line was changed.
+          python -m pip install -e ".[dev,quant,storage]"
 
       - name: Check formatting (ruff format)
         run: python -m ruff format --check .
@@ -151,7 +157,10 @@ jobs:
       - name: Install project (Python, with dev extras)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          # Same three extras as the `python` job; the API process this job
+          # starts cannot import without `storage`, and the suite imports
+          # `quant`. See the note in the `python` job.
+          python -m pip install -e ".[dev,quant,storage]"
 
       # The TypeScript integration suite starts a real API process. It is run
       # in its own job so that it cannot skip for lack of Python and still
