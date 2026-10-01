@@ -10,6 +10,53 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 ## [Unreleased]
 
+### Market data — NSE/BSE and other exchange symbols (increment)
+
+#### Added
+
+- **A second keyless adapter** `src/harsh_quant_os/data/adapters/yahoo.py`
+  — Yahoo Finance's chart endpoint behind the existing `HttpTransport`,
+  chosen because it needs no key (the same structural argument as
+  Kraken: there is no credential in the file to leak) and because it is
+  the keyless source found that quotes Indian exchange symbols — NSE
+  (`^NSEI`, `RELIANCE.NS`, `TCS.NS`) and BSE (`^BSESN`, `TCS.BO`) — alongside
+  any other symbol the service carries. Every `interval` mapping was
+  checked against the live service while the file was written:
+  `dataGranularity` echoes the request for every interval it maps (`4h`
+  genuinely returns four-hour bars), an unknown symbol answers HTTP 404
+  with an empty body — and a burst of requests answered 404 for symbols
+  it had just served, this time with a JSON error document, recovering
+  after about thirty seconds, so a body that speaks is quoted into the
+  failure rather than paraphrased — and intraday windows beyond what the feed still
+  holds answer 400/422 — 7 days of `1m` served, 30 refused, `1h` at 90
+  days served while 400 days came back *silently clipped* to the same
+  ~90. That silent clip is why this adapter — unlike `KrakenProvider`,
+  whose claims are asserted unchanged — measures where the returned
+  series begins and raises `PartialData` on a dominant head shortfall
+  that weekends, holidays or the symbol's own first trade cannot
+  explain. JSON numbers are parsed with `parse_float=Decimal` so no
+  float detour rounds a price on the way in; a row with every price
+  null (observed five times in `^NSEI`'s five-year daily series) is
+  skipped as an absence while a partially null row is refused rather
+  than filled; a missing volume stays `None`, never `0`; and unfinished
+  bars are dropped by arithmetic — a monthly bar waits a conservative
+  31 days, so it is admitted late rather than while it could still
+  change. It satisfies only `HistoricalDataProvider`: a keyless feed
+  offers no honest enumeration of its universe, so `symbols` is
+  deliberately absent and a test pins both halves of that claim.
+- **`hqos data ingest --provider {kraken,yahoo}`** — the feed is chosen
+  at the flag (default `kraken`, behaviour unchanged), and the default
+  dataset name is `<provider>.<symbol>.<timeframe>` so two feeds of one
+  symbol can never overwrite each other. The help names both feeds and
+  an unknown choice is refused at the prompt.
+- **Opt-in live tests** (`HQOS_LIVE_PROVIDER_TESTS=1`): a real `^NSEI`
+  daily fetch carried through validation, storage and manifest
+  registration with provenance recording exactly the source the code
+  declared and the instrument keeping the provider's namespace, plus
+  `TCS.NS` and `TCS.BO` answered in their own venue
+  namespaces — two listings of one company kept apart rather than
+  merged.
+
 ### Phase 3 — market-data engine (complete)
 
 #### Added
@@ -92,12 +139,13 @@ version `0.1.0-alpha` corresponds to PEP 440 `0.1.0a0`.
 
 #### Not yet delivered
 
-A second provider; scheduled or resumable ingestion (the operator names
+Scheduled or resumable ingestion (the operator names
 every window, and nothing resumes from the last stored bar); the full
 validation report of a *successful* run, of which only the status, reasons
 and notes reach the manifest; the session-calendar and second-source
 cross-checks; and the corporate-actions, news, fundamentals and options
-interfaces.
+interfaces. (A second provider is no longer on this list: Yahoo's chart
+endpoint was added later, under its own heading above.)
 
 ### Phase 2 — database and authentication (complete)
 

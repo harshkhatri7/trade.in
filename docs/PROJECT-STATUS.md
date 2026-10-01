@@ -40,7 +40,7 @@
 | Market-data interfaces      | `harsh_quant_os.data` — provider-neutral `Bar`/`BarRequest`, `HistoricalDataProvider` and `MarketDataProvider`, typed provider failures; a test fails the build if anything under `src/` imports a vendor SDK |
 | Validation pipeline         | `harsh_quant_os.data.validation` — schema quarantine, timestamp ordering, duplicates, gaps, outliers; session calendar and second-source cross-check not implemented |
 | Dataset store + manifest    | `data/raw`, `data/clean`, `data/quarantine` written content-addressed and atomically; `datasets` carries quality status, version and storage path with three check constraints; provenance appended per acquisition |
-| Market-data adapter         | `KrakenProvider` — Kraken's public OHLC feed behind `HttpTransport` (stdlib client, no key, prices as decimal strings); paging, an unfinished candle and both observed error responses are handled explicitly, and an opt-in live test composes the whole path |
+| Market-data adapters        | `KrakenProvider` (Kraken's public OHLC feed) and `YahooProvider` (Yahoo Finance's chart endpoint) — both behind `HttpTransport` (stdlib client, no key anywhere in either file); Kraken quotes prices as decimal strings, Yahoo's JSON numbers are parsed with `parse_float=Decimal` so no float detour rounds a price; paging, unfinished candles, all-null rows, granularity echo and each provider's observed error responses are handled explicitly, Yahoo additionally raising `PartialData` when a served series begins long after a window the feed no longer holds, and an opt-in live test composes the whole path for each |
 | Ingestion job               | `hqos data ingest` — fetch → validate → store → register in one command; refuses (exit 1) and quarantines a batch validation rejects; database proved reachable before any network call |
 | Backtesting engine          | `harsh_quant_os.backtesting` — deterministic next-bar-open engine with `Decimal` money and golden money-path tests, the §3 run manifest with byte-identical re-execution, the §4 metric set with assumptions attached, window-coverage checks, and the §6 report (limitations first); every simulated order passes `ConfiguredRiskEvaluator`. Phase 7 increments 1–7 add chronological train/held-out splitting with an append-only held-out-once access ledger (`validation.py`), rolling/expanding walk-forward windows with the aggregated out-of-sample track, windowed manifest re-execution and full walk-forward replay (`walkforward.py`), the declared parameter-sensitivity surface with its adjacency statistics and cell replay (`sensitivity.py`), causal regime segmentation with entry-time attribution and the regime-specific flag (`regimes.py`), the anti-overfitting §2.6 comparison set — a same-universe passive benchmark (`benchmark.py`) and the seeded shuffled-signal null (`null.py`) — the anti-overfitting §2.5 deflated Sharpe (`deflated.py`) that prices the recorded shot count into the report's headline, and the §3 promotion workflow (`promotion.py`) whose gates refuse `validated` without recorded held-out, walk-forward, sensitivity and critique evidence |
 | Type checking               | Strict TypeScript (`tsc --noEmit` for root **and** `apps/web`), strict mypy + Pydantic plugin over `src`, `tests`, `apps/api`, `alembic` |
@@ -110,11 +110,12 @@ defect.
 - Rate limiting and a per-request CSRF token
 - Market-data **ingestion, scheduled and resumable** — Phase 3's adapter,
   validation, store, manifest and the `hqos data ingest` command all
-  exist and have been exercised against a live public provider, but no
-  run is scheduled, nothing resumes from the last stored bar (the
-  operator names the window), and only one provider is implemented. A
-  second provider, the session-calendar check and the second-source
-  cross-check have no implementation either, and the full validation
+  exist and have been exercised against live public providers (Kraken,
+  and Yahoo's chart endpoint for NSE/BSE symbols), but no run is
+  scheduled, nothing resumes from the last stored bar (the
+  operator names the window), and two providers are implemented.
+  The session-calendar check and the second-source cross-check
+  have no implementation either, and the full validation
   report of a *successful* run is not persisted — only the status,
   reasons and notes on the manifest row.
 - Market terminal **UI** — Phase 4, in progress. The read-only dataset API,

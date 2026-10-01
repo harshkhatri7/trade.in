@@ -21,11 +21,11 @@ Phases 0–3 are complete: the **development foundation** (repository
 layout, documentation, tooling, safety gates, contracts, tests, CI), the
 **application skeleton** (a FastAPI service and a Next.js shell joined by
 a typed, tested contract), **PostgreSQL with session authentication**, and
-the **market-data engine** (a Kraken adapter, validation, a dataset store
-with provenance, and `hqos data ingest`). Phase 4, the market terminal,
-has delivered its read-only dataset API, the dataset browser and a
-stored-bars chart; there is still no dashboard, no strategy, no signal, no
-backtest engine and no trading.
+the **market-data engine** (Kraken and Yahoo/NSE-BSE adapters, validation,
+a dataset store with provenance, and `hqos data ingest`). Phase 4, the
+market terminal, has delivered its read-only dataset API, the dataset
+browser and a stored-bars chart; there is still no dashboard, no
+strategy, no signal, no backtest engine and no trading.
 
 | Subsystem        | Status                               |
 | ---------------- | ------------------------------------ |

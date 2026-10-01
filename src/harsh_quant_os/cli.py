@@ -59,6 +59,7 @@ from harsh_quant_os.data import (
     StoreRefused,
     UrllibTransport,
     ValidationReport,
+    YahooProvider,
     quarantine_batch,
     store_batch,
     validate_bars,
@@ -172,9 +173,19 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     ingest.add_argument(
+        "--provider",
+        default="kraken",
+        choices=["kraken", "yahoo"],
+        help=(
+            "Which public feed to fetch from (default: kraken). Both are "
+            "keyless: kraken serves crypto pairs, yahoo additionally serves "
+            "NSE/BSE symbols such as ^NSEI, ^BSESN, RELIANCE.NS, TCS.BO."
+        ),
+    )
+    ingest.add_argument(
         "--symbol",
         required=True,
-        help="The provider's own spelling of the instrument, e.g. XBTUSD.",
+        help="The provider's own spelling of the instrument, e.g. XBTUSD or ^NSEI.",
     )
     ingest.add_argument(
         "--timeframe",
@@ -201,7 +212,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ingest.add_argument(
         "--name",
         default=None,
-        help="Dataset name. Defaults to kraken.<symbol>.<timeframe>.",
+        help="Dataset name. Defaults to <provider>.<symbol>.<timeframe>.",
     )
     ingest.add_argument(
         "--store",
@@ -751,7 +762,7 @@ def _ingest(args: argparse.Namespace) -> int:
     settings = _load_settings()
     _require_database(settings)
 
-    name = args.name or f"kraken.{args.symbol.lower()}.{timeframe.value}"
+    name = args.name or f"{args.provider}.{args.symbol.lower()}.{timeframe.value}"
     store_root = Path(args.store)
 
     async def _run() -> int:
@@ -760,7 +771,15 @@ def _ingest(args: argparse.Namespace) -> int:
             session_factory = build_session_factory(engine)
             await _confirm_database_is_there(session_factory)
 
-            provider = KrakenProvider(UrllibTransport())
+            # The two feeds behind one command: which one is the
+            # operator's choice at the flag, and neither is special
+            # enough to be guessed. Both are keyless, so neither branch
+            # can carry a credential into the request below.
+            provider: KrakenProvider | YahooProvider
+            if args.provider == "yahoo":
+                provider = YahooProvider(UrllibTransport())
+            else:
+                provider = KrakenProvider(UrllibTransport())
             bars = list(
                 await provider.fetch_bars(
                     BarRequest(

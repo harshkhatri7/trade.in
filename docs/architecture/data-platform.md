@@ -76,7 +76,7 @@ Validation checks (Phase 3), and for each one what actually exists in
 | Duplicates       | Drop with a counted, logged report                         | `validate_bars` — first bar at a timestamp wins; a duplicate that *disagreed* with the bar kept is counted separately and makes the batch `suspect` |
 | Outliers         | Flag `suspect`; never winsorise silently                  | `validate_bars` — modified z-score, threshold configurable, reported not adjusted |
 | Session/calendar | Compare against the instrument's session rules            | **Not implemented** — no exchange calendar exists |
-| Cross-check      | Optional second source; disagreement ⇒ `suspect`          | **Not implemented** — no second provider exists |
+| Cross-check      | Optional second source; disagreement ⇒ `suspect`          | **Not implemented** — two providers now exist (Kraken, Yahoo), but each series is still fetched from one source, and cross-provider symbol unification is deliberately absent, so nothing yet has two answers to compare |
 
 Two caveats that the report states rather than hides:
 
@@ -172,18 +172,42 @@ Implemented and tested:
   credentials is the adapter's judgement and not a socket's; a request
   that never got an answer becomes `ProviderUnavailable`. Verified against
   a loopback HTTP server, not against a mock.
-- **One concrete adapter** (`harsh_quant_os.data.adapters.kraken`) —
-  Kraken's public OHLC feed, chosen because it needs no key (so the class
-  of bug that writes a secret into a log is structurally impossible here)
-  and quotes prices as decimal strings (so nothing is rounded before
-  anyone has decided that rounding is acceptable). It pages without
-  sorting, drops the not-yet-committed candle by arithmetic rather than by
-  position, drops the repeat a page boundary creates while leaving a
-  duplicate the provider itself sent for validation to count, and maps
-  only the two error responses actually observed — anything else goes out
-  through the base class carrying the provider's own words. What it can
-  and cannot raise is enumerated in `RAISED_ERRORS`/`NOT_RAISED_ERRORS`
-  and asserted to cover every failure the package declares.
+- **Two concrete adapters** behind the interface
+  (`harsh_quant_os.data.adapters`) —
+  - `…adapters.kraken` — Kraken's public OHLC feed, chosen because it
+    needs no key (so the class of bug that writes a secret into a log is
+    structurally impossible here) and quotes prices as decimal strings (so
+    nothing is rounded before anyone has decided that rounding is
+    acceptable). It pages without sorting, drops the not-yet-committed
+    candle by arithmetic rather than by position, drops the repeat a page
+    boundary creates while leaving a duplicate the provider itself sent
+    for validation to count, and maps only the two error responses
+    actually observed — anything else goes out through the base class
+    carrying the provider's own words. What it can and cannot raise is
+    enumerated in `RAISED_ERRORS`/`NOT_RAISED_ERRORS` and asserted to
+    cover every failure the package declares.
+  - `…adapters.yahoo` — Yahoo Finance's chart endpoint, also keyless, and
+    the one keyless source found that carries Indian exchange symbols:
+    NSE (`^NSEI`, `RELIANCE.NS`, `TCS.NS`) and BSE (`^BSESN`,
+    `TCS.BO`).
+    Its `interval` mapping was checked against the live service for every
+    timeframe it claims (`dataGranularity` echoes the request, `4h`
+    included); JSON numbers are parsed with `parse_float=Decimal` so no
+    float detour rounds a price on the way in; an all-null row — a real
+    shape of this feed — is skipped as an absence while a partially null
+    row is refused rather than filled; and because this feed was observed
+    *silently clipping* a 400-day hourly request to the ~90 days it still
+    holds, it measures where the returned series begins and raises
+    `PartialData` on a dominant head shortfall — the one failure Kraken
+    never raises, asserted both ways. It was also seen to emit its
+    in-progress session marker *out of order* — a flat row stamped at
+    request time, dropped between two older bars in a `1h` series — so
+    the batch is refused for non-increasing timestamps and quarantined;
+    bounding the window to finished sessions is what makes such a
+    request ingestable, and no timestamp is ever sorted or rewritten to
+    get past that check. It satisfies only
+    `HistoricalDataProvider`: a keyless feed offers no honest enumeration
+    of its universe, so `symbols` is deliberately absent.
 - **The ingestion job** (`hqos data ingest` in
   `harsh_quant_os.cli`) — fetch, validate, write the artefacts, register
   the manifest row, in that order, with the database proved reachable
@@ -195,13 +219,12 @@ Implemented and tested:
 - A test that parses every file under `src/` and fails if any imports a
   vendor SDK — principle 1, made executable rather than aspirational.
 
-Not implemented: a second provider; any scheduled or resumable ingestion
-(the operator names the window); the session calendar and second-source
-cross-check; and the four interfaces in section 2 without an
-implementation. Whether data has landed is workspace state rather than a
-property of a fresh checkout — `data/` is not committed — so the evidence
-for that lives in `docs/PROJECT-STATUS.md`, which records what was
-observed and when.
+Not implemented: any scheduled or resumable ingestion (the operator names
+the window); the session calendar and second-source cross-check; and the
+four interfaces in section 2 without an implementation. Whether data has
+landed is workspace state rather than a property of a fresh checkout —
+`data/` is not committed — so the evidence for that lives in
+`docs/PROJECT-STATUS.md`, which records what was observed and when.
 
 ---
 

@@ -375,8 +375,10 @@ def test_ingest_documents_the_window_it_reads(capsys: pytest.CaptureFixture[str]
 
     assert exit_info.value.code == 0
     out = capsys.readouterr().out
-    for flag in ("--symbol", "--timeframe", "--start", "--end", "--limit", "--store"):
+    for flag in ("--provider", "--symbol", "--timeframe", "--start", "--end", "--limit", "--store"):
         assert flag in out, f"{flag} was not documented"
+    for name in ("kraken", "yahoo"):
+        assert name in out, f"the {name} feed was not named in --provider's help"
 
 
 @pytest.mark.unit
@@ -560,6 +562,74 @@ def test_ingest_reports_a_successful_run_without_printing_a_price(
     # What it says it wrote, it wrote.
     assert (tmp_path / "clean" / "cli.ingest.probe").is_dir()
     assert (tmp_path / "raw" / "cli.ingest.probe").is_dir()
+
+
+@pytest.mark.unit
+def test_ingest_rejects_a_provider_it_does_not_have(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A provider is chosen from a list, so a typo is caught at the prompt
+    rather than as a fetch against a feed that was never configured.
+    """
+    with pytest.raises(SystemExit) as exit_info:
+        main(
+            [
+                "data",
+                "ingest",
+                "--provider",
+                "poloniex",
+                "--symbol",
+                "XBTUSD",
+                "--timeframe",
+                "1h",
+                "--start",
+                "2026-01-01T00:00:00+00:00",
+            ]
+        )
+
+    assert exit_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "invalid choice" in err
+    assert "yahoo" in err, "the refusal did not list what is supported"
+    assert "kraken" in err, "the refusal did not list what is supported"
+
+
+@pytest.mark.unit
+def test_the_provider_flag_selects_the_feed_and_names_the_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """``--provider yahoo`` constructs the other adapter, and the default
+    dataset name carries the provider so two feeds of one symbol can
+    never overwrite each other.
+    """
+    bars = _sample_bars(Timeframe.H1)
+
+    class _StubYahoo:
+        source = "https://query1.finance.yahoo.com/v8/finance/chart"
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def fetch_bars(self, request: object) -> list[Bar]:
+            return list(bars)
+
+    monkeypatch.setattr(cli, "YahooProvider", _StubYahoo)
+    monkeypatch.setattr(cli, "_confirm_database_is_there", _async_nothing)
+    monkeypatch.setattr(cli, "build_engine", lambda url: object())
+    monkeypatch.setattr(cli, "dispose_engine", _async_nothing)
+    monkeypatch.setattr(cli, "build_session_factory", lambda engine: object())
+    monkeypatch.setattr(cli, "register_dataset", _fake_register)
+    monkeypatch.setenv("DATABASE_PASSWORD", NON_PLACEHOLDER_PASSWORD)
+
+    assert main(_ingest_args("--provider", "yahoo", "--store", str(tmp_path))) == 0
+
+    out = capsys.readouterr().out
+    assert out.startswith("ingested")
+    # No --name given: <provider>.<symbol>.<timeframe> from the flags.
+    assert (tmp_path / "clean" / "yahoo.xbtusd.1h").is_dir(), "the default name ignored --provider"
+    assert (tmp_path / "raw" / "yahoo.xbtusd.1h").is_dir()
 
 
 @pytest.mark.unit

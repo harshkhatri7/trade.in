@@ -12,5 +12,6 @@ does, so the claim is testable rather than a sentence in a docstring.
 from __future__ import annotations
 
 from harsh_quant_os.data.adapters.kraken import KrakenProvider
+from harsh_quant_os.data.adapters.yahoo import YahooProvider
 
-__all__ = ["KrakenProvider"]
+__all__ = ["KrakenProvider", "YahooProvider"]
