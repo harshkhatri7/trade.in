@@ -4,7 +4,7 @@
 | -------------------- | ---------------------------------------------- |
 | **Project**          | HARSH QUANT OS                                 |
 | **Version**          | 0.1.0-alpha                                    |
-| **Current phase**    | 7 — Strategy validation (in progress)      |
+| **Current phase**    | 8 — AI research (not started; phases 0–7 complete)   |
 | **Live trading**     | **DISABLED**                                   |
 | **Broker**           | **NOT CONNECTED**                              |
 | **Paper trading**    | NOT IMPLEMENTED                                |
@@ -24,7 +24,7 @@
 | --------------------------- | ------------------------------------------------------------ |
 | Git repository              | Initialized, branch `main`, no remote configured             |
 | Repository layout           | `apps/`, `packages/`, `src/`, `agents/`, `docs/`, `tests/`, `scripts/`, `infrastructure/` |
-| Documentation               | Complete for Phases 0–6 and Phase 7 through increment 7 (architecture, development, security, operations, research, ADRs) |
+| Documentation               | Complete for Phases 0–7 (architecture, development, security, operations, research, ADRs) |
 | Database                    | PostgreSQL 16 via SQLAlchemy 2.0 (async) + Alembic; `users`, `sessions`, `audit_log`, `datasets`, `dataset_provenance`, `strategies`, `experiments`, `journal_entries` |
 | Migrations                  | Three revisions (`930c38609bc3` → `3842df3d0db8` → `7c4d9e2a15b3`); empty → head → empty is covered by a test |
 | Backup and restore          | `harsh_quant_os.db.backup` — binary COPY with the schema revision in the manifest; round trip proved by a test |
@@ -135,7 +135,7 @@ defect.
   assessed met below. Parameter-sensitivity surfaces, causal
   regime splits, the passive benchmark and the shuffled-signal null
   exist as of Phase 7 increments 3-5.
-- Strategy validation and walk-forward testing — Phase 7, in progress.
+- Strategy validation and walk-forward testing — Phase 7, complete.
   Increments 1–7 (chronological splits, the held-out-once access
   ledger, train-slice selection recording every variant, walk-forward
   windows with the documented aggregation, tamper-checked JSON
@@ -729,7 +729,7 @@ delivered and validated on 2026-09-30:
   simulated order passes `ConfiguredRiskEvaluator` before it may
   fill.
 
-**Phase 7 (Strategy validation) is in progress.** Increments 1–7 —
+**Phase 7 (Strategy validation) is complete.** Increments 1–7 —
 data separation, walk-forward, replayable windowed evidence, the
 parameter-sensitivity surface, regime segmentation, the
 benchmark/null comparison set, the deflated headline and the
@@ -958,12 +958,19 @@ promotion workflow — are delivered and validated (increments 1–6 on
   move, 5 CLI tests); `ruff check`/`ruff format` clean (202 files),
   `mypy` clean (156 source files), prettier, eslint and `tsc`
   clean, vitest **132 passed**.
+- Phase 7 exit criterion (ROADMAP): a strategy cannot be marked
+  `validated` without out-of-sample and walk-forward evidence
+  attached — **met as of increment 7**: `promote_to_validated`
+  refuses to move a record without held-out and walk-forward
+  evidence recorded (with sensitivity and critique alongside), and
+  the refusal, the hand-written-JSON case and the three-layer
+  critique independence each fail a test when the claim stops being
+  true (backtesting.md §9.8).
 - not started within Phase 7: nothing — all seven increments are
-  delivered; the phase exit criterion (no `validated` without
-  out-of-sample and walk-forward evidence attached) is enforced by
-  `promotion.py` and its tests.
+  delivered.
 
-Not started as of Phase 7 increment 7: Phase 8 (AI research).
+Not started as of Phase 7 completion: Phase 8 (AI research) and the
+phases after it (9–16).
 
 Carried forward, none of it Phase 6: nightly backup scheduling and where
 backups live off-machine; rate limiting and a per-request CSRF token; and
