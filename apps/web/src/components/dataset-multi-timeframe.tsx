@@ -18,6 +18,10 @@
  * inside render loops, so the hook order is the same on every render.
  * Request state is rendered with the app-wide wording and tones
  * (`request-state.ts`).
+ *
+ * Chips are flat and small — this grid is the densest surface in the app,
+ * and giving each of them its own blur would multiply the compositing cost
+ * for no visual gain at 8px.
  */
 import { useMemo } from 'react';
 
@@ -84,7 +88,7 @@ export function DatasetMultiTimeframe({
 
     return (
       <div key={instrument} className="space-y-3">
-        <h3 className="text-sm font-medium uppercase tracking-[0.1em] text-muted">{instrument}</h3>
+        <h3 className="eyebrow">{instrument}</h3>
         <div className="flex flex-wrap gap-2">
           {TIMEFRAMES.map((tf) => {
             const match = timed.find((e) => e.timeframe === tf);
@@ -92,7 +96,7 @@ export function DatasetMultiTimeframe({
               return (
                 <span
                   key={tf}
-                  className="inline-flex cursor-default items-center rounded-md border border-dashed border-line px-2 py-1 text-xs font-medium text-muted"
+                  className="inline-flex min-h-8 cursor-default items-center rounded-md border border-dashed border-white/10 px-3 text-xs font-medium text-muted"
                 >
                   {tf}
                   <span className="sr-only"> (not stored)</span>
@@ -105,7 +109,7 @@ export function DatasetMultiTimeframe({
                 type="button"
                 onClick={() => onSelect(match.name)}
                 aria-label={`View ${tf} of ${instrument}`}
-                className="inline-flex items-center rounded-md border border-accent px-2 py-1 text-xs font-medium text-accent hover:bg-accent hover:text-surface"
+                className="pill pill-accent"
               >
                 {tf}
               </button>
@@ -117,33 +121,26 @@ export function DatasetMultiTimeframe({
   };
 
   return (
-    <section
-      aria-labelledby="multi-timeframe-heading"
-      data-state={listState}
-      className="rounded-lg border border-line bg-raised p-4 sm:p-6"
-    >
+    <section aria-labelledby="multi-timeframe-heading" data-state={listState} className="panel">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="multi-timeframe-heading" className="text-lg font-semibold tracking-tight">
+        <h2 id="multi-timeframe-heading" className="panel-title">
           Multi-timeframe views
         </h2>
-        <p
-          role="status"
-          className={
-            'font-mono text-sm font-semibold tracking-wide ' + REQUEST_STATE_TONES[listState]
-          }
-        >
+        <p role="status" className={'state-chip ' + REQUEST_STATE_TONES[listState]}>
           {REQUEST_STATE_LABELS[listState]}
         </p>
       </div>
 
       {listState !== 'connected' ? (
-        <p className="mt-4 text-sm text-muted" role="note">
+        <p className="note mt-4" role="note">
           {stateNote(listState)}
         </p>
       ) : groups.order.length === 0 ? (
-        <p className="mt-4 text-sm text-muted">
-          No dataset with a recorded instrument can be grouped into a multi-timeframe view yet.
-        </p>
+        <div className="panel-inset mt-4">
+          <p className="text-sm text-muted">
+            No dataset with a recorded instrument can be grouped into a multi-timeframe view yet.
+          </p>
+        </div>
       ) : (
         <div className="mt-4 space-y-5">
           {groups.order.map((inst) => renderGroup(inst, groups.map.get(inst)!))}
@@ -151,7 +148,7 @@ export function DatasetMultiTimeframe({
       )}
 
       {listState === 'connected' && ungrouped.length > 0 && (
-        <p className="mt-3 text-xs text-muted">
+        <p className="note mt-4 text-xs">
           {ungrouped.length === 1 ? 'One dataset lacks' : `${ungrouped.length} datasets lack`} the
           instrument and/or timeframe needed to be placed on this grid (
           {ungrouped.map((s) => s.name).join(', ')}) and cannot be grouped into a multi-timeframe

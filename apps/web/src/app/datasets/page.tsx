@@ -10,9 +10,9 @@ export const metadata: Metadata = {
 
 export default function DatasetsPage() {
   return (
-    <div className="space-y-10">
-      <section aria-labelledby="page-title" className="space-y-4">
-        <p className="text-xs uppercase tracking-[0.28em] text-muted">Market data</p>
+    <div className="space-y-8 sm:space-y-10">
+      <section aria-labelledby="page-title" className="panel animate-rise space-y-4">
+        <p className="eyebrow">Market data</p>
         <h1 id="page-title" className="text-3xl font-semibold tracking-tight sm:text-4xl">
           Datasets
         </h1>
@@ -23,7 +23,9 @@ export default function DatasetsPage() {
         </p>
       </section>
 
-      <DatasetBrowser />
+      <div className="animate-rise">
+        <DatasetBrowser />
+      </div>
     </div>
   );
 }

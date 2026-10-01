@@ -19,6 +19,10 @@
  * The directory's request state is passed through and rendered with the
  * app-wide wording and tones (`request-state.ts`), so this panel never
  * claims CONNECTED while the directory is loading or failed.
+ *
+ * Rows keep flat fills (no backdrop blur) because this list scrolls inside
+ * the panel on a short viewport — blur on scrolling content is exactly the
+ * cost the design system avoids.
  */
 import type { ReactElement } from 'react';
 
@@ -77,11 +81,7 @@ export function DatasetWatchlist({
   const missing = names.filter((name) => !summaries.some((s) => s.name === name));
 
   const removeButton = (name: string) => (
-    <button
-      type="button"
-      onClick={() => onToggle(name)}
-      className="ml-auto rounded-full border border-line px-2 py-0.5 text-xs uppercase tracking-[0.12em] text-muted hover:text-ink"
-    >
+    <button type="button" onClick={() => onToggle(name)} className="pill ml-auto">
       Remove <span className="sr-only">{name} from the watchlist</span>
     </button>
   );
@@ -89,19 +89,19 @@ export function DatasetWatchlist({
   const renderPresent = (s: DatasetSummary) => (
     <li
       key={s.name}
-      className="flex flex-wrap items-baseline gap-2 border-b border-line py-2 text-sm last:border-b-0"
+      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/5 py-2 text-sm last:border-b-0"
     >
       <button
         type="button"
         onClick={() => onSelect(s.name)}
         aria-label={`Open ${s.name}`}
         aria-current={selected === s.name}
-        className="text-left font-mono text-ink underline decoration-line underline-offset-4 hover:decoration-accent focus-visible:decoration-accent"
+        className="link inline-flex min-h-10 items-center font-mono text-left text-ink"
       >
         {s.name}
       </button>
-      <span className="capitalize text-muted">{s.instrument ?? UNKNOWN}</span>
-      <span className="capitalize text-muted">{s.timeframe ?? UNKNOWN}</span>
+      <span className="text-muted">{s.instrument ?? UNKNOWN}</span>
+      <span className="text-muted">{s.timeframe ?? UNKNOWN}</span>
       <span className="font-mono text-xs tabular-nums text-muted">
         {s.row_count === null ? UNKNOWN : s.row_count} rows
       </span>
@@ -115,7 +115,7 @@ export function DatasetWatchlist({
   const renderMissing = (name: string) => (
     <li
       key={name}
-      className="flex flex-wrap items-baseline gap-2 border-b border-line py-2 text-sm last:border-b-0"
+      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/5 py-2 text-sm last:border-b-0"
     >
       <span className="font-mono text-ink">{name}</span>
       <span className="text-xs text-muted">(not in directory)</span>
@@ -127,17 +127,19 @@ export function DatasetWatchlist({
 
   if (listState === 'loading' || listState === 'error' || listState === 'unavailable') {
     section = (
-      <p className="mt-4 text-sm text-muted" role="note">
+      <p className="note mt-4" role="note">
         {stateNote(listState)}
       </p>
     );
   } else if (names.length === 0) {
     section = (
-      <p className="mt-4 text-sm text-muted">
-        No datasets followed yet.
-        <br />
-        Use “Follow” on a directory row to keep one here.
-      </p>
+      <div className="panel-inset mt-4">
+        <p className="text-sm text-muted">
+          No datasets followed yet.
+          <br />
+          Use “Follow” on a directory row to keep one here.
+        </p>
+      </div>
     );
   } else {
     section = (
@@ -149,21 +151,12 @@ export function DatasetWatchlist({
   }
 
   return (
-    <section
-      aria-labelledby="watchlist-heading"
-      data-state={listState}
-      className="rounded-lg border border-line bg-raised p-4 sm:p-6"
-    >
+    <section aria-labelledby="watchlist-heading" data-state={listState} className="panel">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="watchlist-heading" className="text-lg font-semibold tracking-tight">
+        <h2 id="watchlist-heading" className="panel-title">
           Watchlist
         </h2>
-        <p
-          role="status"
-          className={
-            'font-mono text-sm font-semibold tracking-wide ' + REQUEST_STATE_TONES[listState]
-          }
-        >
+        <p role="status" className={'state-chip ' + REQUEST_STATE_TONES[listState]}>
           {REQUEST_STATE_LABELS[listState]}
         </p>
       </div>

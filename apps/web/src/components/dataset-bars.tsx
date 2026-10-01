@@ -22,6 +22,13 @@
  * component tests replace `lightweight-charts` with a stub and assert the
  * data handed to it rather than pixels; the rendered chart itself is
  * verified in a real browser.
+ *
+ * The chart is the one place where the library's own colours are written
+ * as hex: `lightweight-charts` draws on a canvas and takes literal colour
+ * strings, so the values are re-read from the design tokens on mount via
+ * `getComputedStyle` — one token source, no second palette drifting in
+ * parallel. The flat chart surface carries no `backdrop-filter`, so
+ * redrawing during a pan costs no offscreen composite.
  */
 import { useEffect, useMemo, useRef } from 'react';
 
@@ -45,6 +52,25 @@ export interface DatasetBarsProps {
 
 /** What an unfilled volume renders as in the table. Deliberately not `0`. */
 const UNKNOWN = '—';
+
+/**
+ * Read one token out of the document's computed styles.
+ *
+ * Falls back to the token's literal value only when the stylesheet is not
+ * resolvable (jsdom in tests): the fallback is the same hex the token
+ * defines, so the chart and the UI cannot show different colours, and the
+ * test path is never *different* data — only the same value read without a
+ * layout engine.
+ */
+function token(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value === '' ? fallback : value;
+  } catch {
+    return fallback;
+  }
+}
 
 function barsNote(state: DatasetBarsState): string {
   if (state.kind === 'error' || state.kind === 'unavailable') {
@@ -81,27 +107,34 @@ function PriceChart({ bars, label }: { readonly bars: BarPoint[]; readonly label
       return undefined;
     }
 
+    // Design tokens, read once at mount: the same `--color-*` values the
+    // rest of the interface paints with.
+    const inkMuted = token('--color-muted', '#9aa7b8');
+    const line = token('--color-line', '#1f2632');
+    const accent = token('--color-accent', '#7ee0b0');
+    const critical = token('--color-critical', '#ff9494');
+
     const chart = createChart(container, {
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#9aa7b8',
+        textColor: inkMuted,
       },
       grid: {
-        vertLines: { color: '#1f2632' },
-        horzLines: { color: '#1f2632' },
+        vertLines: { color: line },
+        horzLines: { color: line },
       },
-      rightPriceScale: { borderColor: '#1f2632' },
-      timeScale: { borderColor: '#1f2632', timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: line },
+      timeScale: { borderColor: line, timeVisible: true, secondsVisible: false },
     });
 
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#7ee0b0',
-      downColor: '#ff9494',
-      borderUpColor: '#7ee0b0',
-      borderDownColor: '#ff9494',
-      wickUpColor: '#7ee0b0',
-      wickDownColor: '#ff9494',
+      upColor: accent,
+      downColor: critical,
+      borderUpColor: accent,
+      borderDownColor: critical,
+      wickUpColor: accent,
+      wickDownColor: critical,
     });
 
     series.setData(points);
@@ -123,7 +156,7 @@ function PriceChart({ bars, label }: { readonly bars: BarPoint[]; readonly label
       ref={containerRef}
       role="figure"
       aria-label={`Candlestick chart of ${label}: ${points.length} stored bars. The table below states every value as text.`}
-      className="h-72 w-full"
+      className="h-72 w-full rounded-xl border border-white/5 bg-black/25"
     />
   );
 }
@@ -142,41 +175,39 @@ function BarsTable({ bars }: { readonly bars: BarPoint[] }) {
       role="region"
       aria-label="Stored bars table, scrollable"
       tabIndex={0}
-      className="max-h-80 overflow-y-auto"
+      className="max-h-80 overflow-y-auto rounded-xl border border-white/5 bg-black/25 p-4"
     >
-      <table className="w-full text-sm">
+      <table className="data-table">
         <caption className="sr-only">The bars charted above, exactly as stored</caption>
         <thead>
-          <tr className="border-b border-line text-left text-xs uppercase tracking-[0.16em] text-muted">
-            <th scope="col" className="py-2 pr-4 font-medium">
-              Timestamp (UTC)
-            </th>
-            <th scope="col" className="py-2 pr-4 text-right font-medium">
+          <tr>
+            <th scope="col">Timestamp (UTC)</th>
+            <th scope="col" className="text-right">
               Open
             </th>
-            <th scope="col" className="py-2 pr-4 text-right font-medium">
+            <th scope="col" className="text-right">
               High
             </th>
-            <th scope="col" className="py-2 pr-4 text-right font-medium">
+            <th scope="col" className="text-right">
               Low
             </th>
-            <th scope="col" className="py-2 pr-4 text-right font-medium">
+            <th scope="col" className="text-right">
               Close
             </th>
-            <th scope="col" className="py-2 text-right font-medium">
+            <th scope="col" className="text-right">
               Volume
             </th>
           </tr>
         </thead>
         <tbody>
           {bars.map((bar) => (
-            <tr key={bar.timestamp} className="border-b border-line last:border-b-0">
-              <td className="py-2 pr-4 font-mono text-xs">{bar.timestamp}</td>
-              <td className="py-2 pr-4 text-right font-mono tabular-nums">{bar.open}</td>
-              <td className="py-2 pr-4 text-right font-mono tabular-nums">{bar.high}</td>
-              <td className="py-2 pr-4 text-right font-mono tabular-nums">{bar.low}</td>
-              <td className="py-2 pr-4 text-right font-mono tabular-nums">{bar.close}</td>
-              <td className="py-2 text-right font-mono tabular-nums">
+            <tr key={bar.timestamp}>
+              <td className="font-mono text-xs">{bar.timestamp}</td>
+              <td className="text-right font-mono tabular-nums">{bar.open}</td>
+              <td className="text-right font-mono tabular-nums">{bar.high}</td>
+              <td className="text-right font-mono tabular-nums">{bar.low}</td>
+              <td className="text-right font-mono tabular-nums">{bar.close}</td>
+              <td className="text-right font-mono tabular-nums">
                 {bar.volume === null ? UNKNOWN : bar.volume}
               </td>
             </tr>
@@ -214,21 +245,25 @@ export function DatasetBars({ name, client = defaultApiClient }: DatasetBarsProp
   return (
     <section aria-labelledby="dataset-bars-heading" data-state={state.kind} className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h3 id="dataset-bars-heading" className="text-sm font-semibold uppercase tracking-[0.18em]">
+        <h3 id="dataset-bars-heading" className="eyebrow">
           Stored bars
         </h3>
-        <p className="flex items-baseline gap-3 text-sm">
-          <span
-            role="status"
-            className={
-              'font-mono text-sm font-semibold tracking-wide ' + REQUEST_STATE_TONES[state.kind]
-            }
-          >
+        <p className="flex flex-wrap items-baseline gap-3 text-sm">
+          <span role="status" className={'state-chip ' + REQUEST_STATE_TONES[state.kind]}>
             {REQUEST_STATE_LABELS[state.kind]}
           </span>
           <span className="text-muted">{barsNote(state)}</span>
         </p>
       </div>
+
+      {state.kind === 'loading' && (
+        // Decorative: the chart that has not arrived, suggested by three
+        // flat blocks. The LOADING word above is the announcement.
+        <div className="space-y-4" aria-hidden="true">
+          <div className="skeleton h-4 w-1/3" />
+          <div className="skeleton h-72 w-full" />
+        </div>
+      )}
 
       {state.kind === 'connected' && (
         <>

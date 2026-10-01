@@ -16,6 +16,13 @@
  * The directory shows a shortened version because it is an index; the
  * detail panel always shows the full SHA-256, so a figure can be named
  * exactly and the artefact identified without hovering anything.
+ *
+ * Layout notes: tables sit in `overflow-x-auto` scrollers with the
+ * definition list above them stacking below 640px, so a 320px viewport
+ * scrolls horizontally instead of squeezing eight columns into illegible
+ * widths; every scroller is focusable (`tabindex=0`) so a keyboard-only
+ * operator can reach what is off-screen. Scroll surfaces use flat fills —
+ * no `backdrop-filter` on anything that moves during scroll.
  */
 import { useState } from 'react';
 
@@ -49,6 +56,15 @@ const QUALITY_TONES: Record<DataQualityStatus, string> = {
   invalid: 'text-critical',
   pending: 'text-muted',
   unknown: 'text-muted',
+};
+
+/** One word the tint repeats; the word is what carries the meaning. */
+const QUALITY_DOT: Record<DataQualityStatus, string> = {
+  valid: 'bg-accent',
+  suspect: 'bg-warning',
+  invalid: 'bg-critical',
+  pending: 'bg-muted',
+  unknown: 'bg-muted',
 };
 
 function shown(value: string | number | null): string {
@@ -103,6 +119,10 @@ function detailNote(detail: DatasetDetailState): string {
 function QualityBadge({ status }: { readonly status: DataQualityStatus }) {
   return (
     <span className={'font-mono text-xs font-semibold uppercase ' + QUALITY_TONES[status]}>
+      <span
+        aria-hidden="true"
+        className={'mr-1.5 inline-block size-1.5 rounded-full align-middle ' + QUALITY_DOT[status]}
+      />
       {status}
     </span>
   );
@@ -110,9 +130,9 @@ function QualityBadge({ status }: { readonly status: DataQualityStatus }) {
 
 function DetailRow({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-line py-3 last:border-b-0">
-      <dt className="text-xs uppercase tracking-[0.18em] text-muted">{label}</dt>
-      <dd className="break-all text-right font-mono text-sm text-ink">{value}</dd>
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-white/5 py-3 last:border-b-0">
+      <dt className="eyebrow">{label}</dt>
+      <dd className="min-w-0 break-all text-right font-mono text-sm text-ink">{value}</dd>
     </div>
   );
 }
@@ -120,47 +140,37 @@ function DetailRow({ label, value }: { readonly label: string; readonly value: s
 /** Checksums are shown in full: a shortened one cannot be verified against anything. */
 function ProvenanceTable({ entries }: { readonly entries: DatasetProvenanceEntry[] }) {
   if (entries.length === 0) {
-    return <p className="mt-3 text-sm text-muted">No acquisition has been recorded.</p>;
+    return <p className="note mt-3">No acquisition has been recorded.</p>;
   }
 
   return (
-    <div className="mt-3 overflow-x-auto">
-      <table className="w-full text-sm">
+    <div
+      role="region"
+      aria-label="Acquisition history, scrollable"
+      tabIndex={0}
+      className="mt-3 max-h-96 overflow-auto"
+    >
+      <table className="data-table">
         <caption className="sr-only">Append-only acquisition history, newest first</caption>
         <thead>
-          <tr className="border-b border-line text-left text-xs uppercase tracking-[0.16em] text-muted">
-            <th scope="col" className="py-2 pr-4 font-medium">
-              Acquired (UTC)
-            </th>
-            <th scope="col" className="py-2 pr-4 font-medium">
-              Source
-            </th>
-            <th scope="col" className="py-2 pr-4 text-right font-medium">
+          <tr>
+            <th scope="col">Acquired (UTC)</th>
+            <th scope="col">Source</th>
+            <th scope="col" className="text-right">
               Rows
             </th>
-            <th scope="col" className="py-2 pr-4 font-medium">
-              Checksum (SHA-256)
-            </th>
-            <th scope="col" className="py-2 font-medium">
-              Notes
-            </th>
+            <th scope="col">Checksum (SHA-256)</th>
+            <th scope="col">Notes</th>
           </tr>
         </thead>
         <tbody>
           {entries.map((entry) => (
-            <tr
-              key={`${entry.acquired_at}|${entry.source}|${entry.notes ?? ''}`}
-              className="border-b border-line align-top last:border-b-0"
-            >
-              <td className="py-3 pr-4 font-mono text-xs">{entry.acquired_at}</td>
-              <td className="break-all py-3 pr-4 font-mono text-xs">{entry.source}</td>
-              <td className="py-3 pr-4 text-right font-mono tabular-nums">
-                {shown(entry.row_count)}
-              </td>
-              <td className="break-all py-3 pr-4 font-mono text-xs">
-                {shown(entry.checksum_sha256)}
-              </td>
-              <td className="py-3 text-muted">{shown(entry.notes)}</td>
+            <tr key={`${entry.acquired_at}|${entry.source}|${entry.notes ?? ''}`}>
+              <td className="font-mono text-xs">{entry.acquired_at}</td>
+              <td className="break-all font-mono text-xs">{entry.source}</td>
+              <td className="text-right font-mono tabular-nums">{shown(entry.row_count)}</td>
+              <td className="break-all font-mono text-xs">{shown(entry.checksum_sha256)}</td>
+              <td className="text-muted">{shown(entry.notes)}</td>
             </tr>
           ))}
         </tbody>
@@ -180,7 +190,7 @@ function DetailPanel({
 
   return (
     <div className="mt-6 space-y-8">
-      <dl>
+      <dl className="panel-inset">
         <DetailRow label="Version (SHA-256 of the artefact)" value={shown(dataset.version)} />
         <DetailRow label="Instrument" value={shown(dataset.instrument)} />
         <DetailRow label="Timeframe" value={shown(dataset.timeframe)} />
@@ -195,7 +205,7 @@ function DetailPanel({
       <DatasetBars name={dataset.name} client={client} />
 
       <div>
-        <h3 className="text-sm font-semibold uppercase tracking-[0.18em]">Acquisition history</h3>
+        <h3 className="eyebrow">Acquisition history</h3>
         <p className="mt-1 text-xs text-muted">
           Append-only: a correction appears as another entry, and nothing already recorded is
           rewritten.
@@ -221,105 +231,96 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
   const datasets = list.kind === 'connected' ? list.response.datasets : [];
 
   return (
-    <div className="space-y-8">
-      <section
-        aria-labelledby="dataset-directory-heading"
-        data-state={list.kind}
-        className="rounded-lg border border-line bg-raised p-6 sm:p-8"
-      >
+    <div className="space-y-6 sm:space-y-8">
+      <section aria-labelledby="dataset-directory-heading" data-state={list.kind} className="panel">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h2 id="dataset-directory-heading" className="text-lg font-semibold tracking-tight">
+          <h2 id="dataset-directory-heading" className="panel-title">
             Dataset directory
           </h2>
-          <p className="text-xs uppercase tracking-[0.18em] text-muted">Live API response</p>
+          <p className="eyebrow">Live API response</p>
         </div>
 
         <p className="mt-4 flex flex-wrap items-baseline gap-3 text-sm">
-          <span
-            role="status"
-            className={
-              'font-mono text-sm font-semibold tracking-wide ' + REQUEST_STATE_TONES[list.kind]
-            }
-          >
+          <span role="status" className={'state-chip ' + REQUEST_STATE_TONES[list.kind]}>
             {REQUEST_STATE_LABELS[list.kind]}
           </span>
           <span className="text-muted">{listNote(list, datasets.length)}</span>
         </p>
 
+        {list.kind === 'loading' && (
+          // Decorative stand-in for the rows that have not arrived; the
+          // LOADING chip above is what gets announced.
+          <div className="mt-6 space-y-2" aria-hidden="true">
+            <div className="skeleton h-10 w-full" />
+            <div className="skeleton h-10 w-5/6" />
+            <div className="skeleton h-10 w-2/3" />
+          </div>
+        )}
+
         {list.kind === 'connected' &&
           (datasets.length === 0 ? (
-            <p className="mt-6 max-w-2xl text-sm text-muted">
-              Nothing has been ingested yet. A dataset appears here once{' '}
-              <code className="font-mono text-ink">hqos data ingest</code> has validated it and
-              recorded where it came from.
-            </p>
+            <div className="mt-6 panel-inset">
+              <p className="text-sm text-muted">
+                Nothing has been ingested yet. A dataset appears here once{' '}
+                <code className="font-mono text-ink">hqos data ingest</code> has validated it and
+                recorded where it came from.
+              </p>
+            </div>
           ) : (
             <div className="mt-6 space-y-4">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div
+                role="region"
+                aria-label="Dataset directory table, scrollable"
+                tabIndex={0}
+                className="overflow-x-auto"
+              >
+                <table className="data-table min-w-[46rem]">
                   <caption className="sr-only">
                     Stored datasets with quality status, row count and artefact version
                   </caption>
                   <thead>
-                    <tr className="border-b border-line text-left text-xs uppercase tracking-[0.16em] text-muted">
-                      <th scope="col" className="py-2 pr-4 font-medium">
-                        Dataset
-                      </th>
-                      <th scope="col" className="py-2 pr-4 font-medium">
-                        Instrument
-                      </th>
-                      <th scope="col" className="py-2 pr-4 font-medium">
-                        Timeframe
-                      </th>
-                      <th scope="col" className="py-2 pr-4 font-medium">
-                        Quality
-                      </th>
-                      <th scope="col" className="py-2 pr-4 text-right font-medium">
+                    <tr>
+                      <th scope="col">Dataset</th>
+                      <th scope="col">Instrument</th>
+                      <th scope="col">Timeframe</th>
+                      <th scope="col">Quality</th>
+                      <th scope="col" className="text-right">
                         Rows
                       </th>
-                      <th scope="col" className="py-2 pr-4 font-medium">
-                        Version
-                      </th>
-                      <th scope="col" className="py-2 font-medium">
-                        Acquired (UTC)
-                      </th>
-                      <th scope="col" className="py-2 font-medium">
-                        Watchlist
-                      </th>
+                      <th scope="col">Version</th>
+                      <th scope="col">Acquired (UTC)</th>
+                      <th scope="col">Watchlist</th>
                     </tr>
                   </thead>
                   <tbody>
                     {datasets.map((dataset) => (
-                      <tr
-                        key={dataset.name}
-                        className="border-b border-line align-top last:border-b-0"
-                      >
-                        <th scope="row" className="py-3 pr-4 text-left font-medium">
+                      <tr key={dataset.name}>
+                        <th scope="row" className="font-medium">
                           <button
                             type="button"
                             onClick={() => setSelected(dataset.name)}
                             aria-pressed={selected === dataset.name}
-                            className="text-left font-mono underline decoration-line underline-offset-4 hover:decoration-accent focus-visible:decoration-accent"
+                            className="link inline-flex min-h-10 items-center font-mono text-left text-ink"
                           >
                             {dataset.name}
                           </button>
                         </th>
-                        <td className="py-3 pr-4 font-mono">{shown(dataset.instrument)}</td>
-                        <td className="py-3 pr-4 font-mono">{shown(dataset.timeframe)}</td>
-                        <td className="py-3 pr-4">
+                        <td className="font-mono">{shown(dataset.instrument)}</td>
+                        <td className="font-mono">{shown(dataset.timeframe)}</td>
+                        <td>
                           <QualityBadge status={dataset.quality_status} />
                         </td>
-                        <td className="py-3 pr-4 text-right font-mono tabular-nums">
+                        <td className="text-right font-mono tabular-nums">
                           {shown(dataset.row_count)}
                         </td>
-                        <td className="py-3 pr-4 font-mono text-xs">
+                        <td className="font-mono text-xs">
                           {dataset.version === null ? (
                             UNKNOWN
                           ) : (
                             <span title={dataset.version}>{shortVersion(dataset.version)}</span>
                           )}
                         </td>
-                        <td className="py-3 font-mono text-xs">
+                        <td className="font-mono text-xs">
                           {dataset.acquired_at === null ? (
                             UNKNOWN
                           ) : (
@@ -328,13 +329,13 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
                             </span>
                           )}
                         </td>
-                        <td className="py-3">
+                        <td>
                           <button
                             type="button"
                             onClick={() => toggleWatchlist(dataset.name)}
                             aria-pressed={watchlist.includes(dataset.name)}
                             aria-label={`Follow ${dataset.name}`}
-                            className="rounded-full border border-line px-2 py-0.5 text-xs uppercase tracking-[0.12em] text-muted hover:text-ink"
+                            className="pill"
                           >
                             Follow
                           </button>
@@ -354,7 +355,7 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
 
       {/* Watchlist and multi-timeframe share the directory's request state:
           neither may claim CONNECTED while the directory has not answered. */}
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
         <DatasetWatchlist
           summaries={datasets}
           listState={list.kind}
@@ -370,35 +371,43 @@ export function DatasetBrowser({ client = defaultApiClient }: DatasetBrowserProp
         <section
           aria-labelledby="dataset-detail-heading"
           data-state={detail.kind}
-          className="rounded-lg border border-line bg-raised p-6 sm:p-8"
+          className="panel animate-rise"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-3">
-            <h2
-              id="dataset-detail-heading"
-              className="break-all font-mono text-lg font-semibold tracking-tight"
-            >
+            <h2 id="dataset-detail-heading" className="panel-title min-w-0 break-all font-mono">
               {selected}
             </h2>
-            <button
-              type="button"
-              onClick={() => setSelected(null)}
-              className="rounded-full border border-line px-3 py-1 text-xs uppercase tracking-[0.16em] text-muted hover:text-ink"
-            >
+            <button type="button" onClick={() => setSelected(null)} className="pill">
               Close
             </button>
           </div>
 
           <p className="mt-4 flex flex-wrap items-baseline gap-3 text-sm">
-            <span
-              role="status"
-              className={
-                'font-mono text-sm font-semibold tracking-wide ' + REQUEST_STATE_TONES[detail.kind]
-              }
-            >
+            <span role="status" className={'state-chip ' + REQUEST_STATE_TONES[detail.kind]}>
               {REQUEST_STATE_LABELS[detail.kind]}
             </span>
-            <span className="text-muted">{detailNote(detail)}</span>
+            {/* The note is rendered once: in the status line for the waiting
+                and connected states, and as the failure `note` below for
+                error/unavailable — so the message on screen (and in any
+                query by text) is never duplicated. */}
+            {detail.kind !== 'error' && detail.kind !== 'unavailable' && (
+              <span className="text-muted">{detailNote(detail)}</span>
+            )}
           </p>
+
+          {(detail.kind === 'loading' || detail.kind === 'idle') && (
+            <div className="mt-6 space-y-2" aria-hidden="true">
+              <div className="skeleton h-4 w-1/2" />
+              <div className="skeleton h-4 w-2/3" />
+              <div className="skeleton h-40 w-full" />
+            </div>
+          )}
+
+          {(detail.kind === 'error' || detail.kind === 'unavailable') && (
+            <p className={'note mt-4 ' + REQUEST_STATE_TONES[detail.kind]} role="note">
+              {detailNote(detail)}
+            </p>
+          )}
 
           {detail.kind === 'connected' && <DetailPanel detail={detail.value} client={client} />}
         </section>

@@ -1,11 +1,26 @@
 @import 'tailwindcss';
 
 /*
- * Design tokens for the platform. Tailwind v4 reads these from CSS, so there
- * is no separate config file: one source of truth for colour, type and rhythm.
- * The palette is intentionally dark, restrained and high-contrast.
+ * HARSH QUANT OS design system.
+ *
+ * One file owns every token and every shared surface recipe, so a colour or
+ * a rhythm can be changed in exactly one place. Three rules govern it:
+ *
+ * 1. Product before decoration — nothing below invents content, data or
+ *    interaction. Every panel styles a real API payload or a real state.
+ * 2. An 8px grid — every space used by the UI is a multiple of 8 (16, 24,
+ *    32, 40, 48, 64…). Tailwind's default 4px scale stays available; the
+ *    UI only ever picks even steps of it.
+ * 3. Restrained glass, three depth levels — blur is a scarce resource
+ *    spent on `.glass-2`/`.glass-3` only (see "Backdrop cost" below),
+ *    never on scrolling tables, lists or the chart.
+ *
+ * Design tokens. Tailwind v4 reads these from CSS, so there is no separate
+ * config file: one source of truth for colour, type and rhythm.
+ * The palette is intentionally dark, neutral and high-contrast.
  */
 @theme {
+  /* Base palette (unchanged names: every component already speaks them). */
   --color-surface: #0a0c10;
   --color-raised: #11151c;
   --color-line: #1f2632;
@@ -15,14 +30,36 @@
   --color-warning: #e9c46a;
   --color-critical: #ff9494;
 
+  /* Glass: fill, hairline and elevation for the three depth levels. */
+  --color-glass-1-fill: rgb(255 255 255 / 0.05);
+  --color-glass-1-line: rgb(255 255 255 / 0.08);
+  --color-glass-2-fill: rgb(255 255 255 / 0.08);
+  --color-glass-2-line: rgb(255 255 255 / 0.13);
+  --color-glass-3-fill: rgb(10 12 16 / 0.74);
+  --color-glass-3-line: rgb(255 255 255 / 0.1);
+
+  /* Radii: one panel radius, one inner radius, one pill. */
+  --radius-panel: 1.25rem;
+  --radius-inner: 0.75rem;
+
+  /* Motion: two durations, one curve, applied only where motion informs. */
+  --ease-out-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 }
 
+/* ------------------------------------------------------------------ base */
+
 html {
   color-scheme: dark;
+  /* Anchors and in-page jumps move instantly for anyone who asked for
+     reduced motion; everyone else keeps the browser's smooth default. */
+  scroll-behavior: smooth;
 }
 
 body {
@@ -33,6 +70,25 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/*
+ * Ambient light behind the whole app: three fixed, very low-opacity radial
+ * gradients so the glass panels have something to refract. Pure CSS — no
+ * image is fetched, nothing is fetched at all — and the layer sits at
+ * z-index -1, so it paints above the canvas background and below every bit
+ * of content: what shows through a panel's blur is this, never a lie.
+ * `pointer-events: none` keeps it inert.
+ */
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(48rem 32rem at 14% -8%, rgb(126 224 176 / 0.09), transparent 62%),
+    radial-gradient(44rem 30rem at 88% 4%, rgb(154 167 184 / 0.07), transparent 64%),
+    radial-gradient(60rem 40rem at 50% 112%, rgb(233 196 106 / 0.05), transparent 60%);
+}
+
 ::selection {
   background-color: color-mix(in oklab, var(--color-accent) 40%, transparent);
   color: var(--color-ink);
@@ -41,13 +97,24 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+  border-radius: 2px;
+  /* Tailwind's `transition-colors` utility lists `outline-color`, so the
+     ring animated from `currentcolor` and — in the browsers we audited —
+     never settled on the accent. Re-declaring the property list here (the
+     `:focus-visible` rule is unlayered, so it wins over the utility) keeps
+     colour transitions for text/background/border while the ring snaps to
+     the accent the moment focus lands. On blur the outline style returns to
+     `none`, so nothing is left animating. */
+  transition-property:
+    color, background-color, border-color, text-decoration-color, fill, stroke, --tw-gradient-from,
+    --tw-gradient-via, --tw-gradient-to;
 }
 
 .skip-link {
   position: absolute;
   left: -9999px;
   top: 0;
-  z-index: 10;
+  z-index: 100;
   background-color: var(--color-raised);
   color: var(--color-ink);
   padding: 0.75rem 1rem;
@@ -59,11 +126,373 @@ body {
   top: 1rem;
 }
 
+/* -------------------------------------------------------- glass recipes
+ *
+ * Three depth levels, each a complete recipe (fill, hairline, blur,
+ * elevation) so no component has to compose them by hand.
+ *
+ * Backdrop cost: `backdrop-filter` forces a offscreen composite of
+ * everything behind the element. It is spent only on `.glass-2` (panels)
+ * and `.glass-3` (the sticky bar) — bounded, non-scrolling surfaces — and
+ * never on tables, rows, the chart or the ambient layer. Scrolling content
+ * sits on flat fills instead, which is what keeps the page cheap to paint.
+ * Both fallbacks below collapse the blur to a solid fill: unsupported
+ * hardware, and reduced-transparency preferences, look the same.
+ */
+
+/* Level 1 — quiet card fill. No blur: this is the default surface. */
+.glass-1 {
+  background-color: var(--color-glass-1-fill);
+  border: 1px solid var(--color-glass-1-line);
+}
+
+/* Level 2 — panel: frosted, floated, with a lit top edge. */
+.glass-2 {
+  background-color: var(--color-glass-2-fill);
+  border: 1px solid var(--color-glass-2-line);
+  /* Only the standard property is written. LightningCSS (Tailwind v4's
+     transformer) emits the `-webkit-` alias per its browser targets when it
+     has to — but given both declarations for the same property it keeps only
+     the prefixed one and discards the standard, which left `backdrop-filter`
+     unsupported and the blur silently absent. Verified in the compiled CSS
+     and in the browser's `CSS.supports`. */
+  backdrop-filter: blur(20px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.07),
+    0 24px 48px -32px rgb(0 0 0 / 0.9);
+}
+
+/* Level 3 — overlay bar: the most opaque fill so text over scrolling
+   content stays readable, and the strongest edge light. */
+.glass-3 {
+  background-color: var(--color-glass-3-fill);
+  border-bottom: 1px solid var(--color-glass-3-line);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: inset 0 -1px 0 0 rgb(0 0 0 / 0.35);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-2,
+  .glass-3,
+  .panel {
+    background-color: color-mix(in oklab, var(--color-raised) 92%, transparent);
+    /* Standard property only, for the reason given above: the paired
+       `-webkit-` line would suppress this one in the compiled output. */
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-2,
+  .glass-3,
+  .panel {
+    background-color: var(--color-raised);
+    backdrop-filter: none;
+  }
+}
+
+/* -------------------------------------------------------- component layer
+ *
+ * Shared recipes live here rather than being retyped per component, and sit
+ * in the `components` layer so a Tailwind utility can still override any
+ * single property at the call site.
+ */
+@layer components {
+  /* Every content panel: level-2 glass on the 8px grid. The glass-2 recipe
+     is restated rather than composed — `composes` is a CSS Modules feature
+     and this file is plain CSS consumed directly by Tailwind. */
+  .panel {
+    background-color: var(--color-glass-2-fill);
+    border: 1px solid var(--color-glass-2-line);
+    backdrop-filter: blur(20px) saturate(140%);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.07),
+      0 24px 48px -32px rgb(0 0 0 / 0.9);
+    border-radius: var(--radius-panel);
+    padding: 1.5rem; /* 24px */
+  }
+
+  @media (min-width: 40rem) {
+    .panel {
+      padding: 2rem; /* 32px */
+    }
+  }
+
+  /* Inner card inside a panel: flat, quiet, one radius step down. */
+  .panel-inset {
+    background-color: rgb(0 0 0 / 0.28);
+    border: 1px solid var(--color-glass-1-line);
+    border-radius: var(--radius-inner);
+    padding: 1rem; /* 16px */
+  }
+
+  /* The small uppercase label that heads a section. */
+  .eyebrow {
+    font-size: 0.6875rem; /* 11px */
+    font-weight: 600;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  /* Section heading inside a panel. */
+  .panel-title {
+    font-size: 1.125rem; /* 18px */
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-ink);
+  }
+
+  /* Interactive pill: Follow / Close / Remove. Always a real button —
+     `aria-pressed` and a focus ring come from the element itself.
+     `min-height` is 40px (5×8): the mobile audit's target size, and above
+     WCAG 2.2's 24px minimum, so a Follow button in a dense table row is
+     still comfortable to hit at 320px. */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    min-height: 2.5rem; /* 40px */
+    border: 1px solid var(--color-glass-2-line);
+    border-radius: 999px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem; /* 12px */
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    background-color: rgb(0 0 0 / 0.25);
+    transition:
+      color var(--duration-fast) var(--ease-out-soft),
+      background-color var(--duration-fast) var(--ease-out-soft),
+      border-color var(--duration-fast) var(--ease-out-soft),
+      transform var(--duration-fast) var(--ease-out-soft);
+  }
+
+  .pill:hover {
+    color: var(--color-ink);
+    border-color: color-mix(in oklab, var(--color-accent) 45%, transparent);
+    background-color: color-mix(in oklab, var(--color-accent) 10%, transparent);
+  }
+
+  .pill:active {
+    transform: translateY(1px);
+  }
+
+  /* Accent pill: the one primary action style (timeframe chips). */
+  .pill-accent {
+    color: var(--color-accent);
+    border-color: color-mix(in oklab, var(--color-accent) 55%, transparent);
+    background-color: color-mix(in oklab, var(--color-accent) 8%, transparent);
+  }
+
+  .pill-accent:hover {
+    color: var(--color-surface);
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+
+  /* Request-state chip: tint + word. The word always carries the meaning;
+     the tint only reinforces it. */
+  .state-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+
+  .state-chip::before {
+    content: '';
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background-color: currentcolor;
+    box-shadow: 0 0 0 3px color-mix(in oklab, currentcolor 22%, transparent);
+  }
+
+  /* Data table: flat fill (no backdrop cost while scrolling), hairline
+     rows, hover that tracks the eye across wide rows. */
+  .data-table {
+    width: 100%;
+    font-size: 0.875rem; /* 14px */
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: color-mix(in oklab, var(--color-surface) 88%, transparent);
+    padding: 0.75rem 1rem 0.75rem 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .data-table thead th:last-child {
+    padding-right: 0;
+  }
+
+  .data-table tbody td,
+  .data-table tbody th {
+    padding: 0.75rem 1rem 0.75rem 0;
+    border-top: 1px solid var(--color-glass-1-line);
+    vertical-align: top;
+    text-align: left;
+  }
+
+  .data-table tbody td:last-child,
+  .data-table tbody th:last-child {
+    padding-right: 0;
+  }
+
+  .data-table tbody tr {
+    transition: background-color var(--duration-fast) var(--ease-out-soft);
+  }
+
+  .data-table tbody tr:hover {
+    background-color: rgb(255 255 255 / 0.035);
+  }
+
+  /* Empty / explanatory note: dashed left rule instead of a border box. */
+  .note {
+    border-left: 2px solid var(--color-glass-2-line);
+    padding-left: 1rem;
+    color: var(--color-muted);
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  /* Loading skeleton: a shimmering flat block. Decorative only — the real
+     LOADING / CONNECTED / ERROR word is always rendered beside it, so a
+     screen reader is never handed an animation instead of a state. */
+  .skeleton {
+    background:
+      linear-gradient(
+        90deg,
+        rgb(255 255 255 / 0.04) 0%,
+        rgb(255 255 255 / 0.09) 50%,
+        rgb(255 255 255 / 0.04) 100%
+      ),
+      rgb(0 0 0 / 0.25);
+    background-size: 200% 100%;
+    animation: skeleton-sweep 1.6s var(--ease-out-soft) infinite;
+    border-radius: var(--radius-inner);
+  }
+
+  /* Text link styled as an underline that lights up. */
+  .link {
+    text-decoration: underline;
+    text-decoration-color: var(--color-line);
+    text-underline-offset: 4px;
+    transition:
+      text-decoration-color var(--duration-fast) var(--ease-out-soft),
+      color var(--duration-fast) var(--ease-out-soft);
+  }
+
+  .link:hover,
+  .link:focus-visible {
+    text-decoration-color: var(--color-accent);
+  }
+}
+
+/* --------------------------------------------------------------- motion
+ *
+ * Entrance and feedback only — motion never carries information that the
+ * text does not already state. Everything below is neutralised by the
+ * reduced-motion block at the end of this file.
+ */
+@keyframes skeleton-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-rise {
+  animation: rise-in var(--duration-base) var(--ease-out-soft) both;
+}
+
+.animate-fade {
+  animation: fade-in var(--duration-base) var(--ease-out-soft) both;
+}
+
+/* Stagger the top-level sections of a page without inline styles. */
+.animate-rise:nth-child(2) {
+  animation-delay: 60ms;
+}
+.animate-rise:nth-child(3) {
+  animation-delay: 120ms;
+}
+.animate-rise:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+/* Hover lift for panels: subtle, pointer-only, never focus-only. */
+@media (hover: hover) and (pointer: fine) {
+  .panel {
+    transition:
+      transform var(--duration-base) var(--ease-out-soft),
+      box-shadow var(--duration-base) var(--ease-out-soft),
+      border-color var(--duration-base) var(--ease-out-soft);
+  }
+
+  .panel:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.09),
+      0 32px 56px -34px rgb(0 0 0 / 0.95);
+    border-color: var(--color-glass-2-line);
+  }
+}
+
+/* --------------------------------------------------- reduced motion
+ *
+ * One override for every animation and transition in the app, including
+ * the skeletons and the hover lift above. Colour and focus changes remain,
+ * because they are feedback rather than decoration.
+ */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   *,
   *::before,
   *::after {
-    transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
